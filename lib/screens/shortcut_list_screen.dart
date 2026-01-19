@@ -104,16 +104,13 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                 SwitchListTile(
                   title: const Text('Use Custom Keyboard'),
                   subtitle: const Text(
-                    'Show numeric keyboard in bottom-left corner',
+                    'Show numeric keyboard in bottom-left corner (autofocus can be controlled separately)',
                     style: TextStyle(fontSize: 12),
                   ),
                   value: useCustomKeyboard,
                   onChanged: (value) {
                     setDialogState(() {
                       useCustomKeyboard = value;
-                      if (value) {
-                        disableAutoFocus = true; // Custom keyboard implies disabling system keyboard
-                      }
                     });
                   },
                   contentPadding: EdgeInsets.zero,

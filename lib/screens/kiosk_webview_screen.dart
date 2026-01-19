@@ -218,13 +218,18 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               );
             } else {
               // Actual page finished loading
+              if (!mounted) return;
               setState(() {
                 _isLoading = false;
               });
               _extractFavicon();
               // Prevent auto-focus on input fields to avoid keyboard popup (if option enabled)
               if (widget.disableAutoFocus) {
-                _disableAutoFocus();
+                _preventAutoFocus();
+              }
+              // Set up custom keyboard if enabled (independent of autofocus)
+              if (widget.useCustomKeyboard) {
+                _setupCustomKeyboard();
               }
               // Note: Copy/paste disabling is now handled in _setupCustomKeyboard()
             }
@@ -232,6 +237,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           onPageStarted: (String url) {
             // Only set loading for actual URL, not blank page
             if (!url.contains('data:text/html') && url != 'about:blank') {
+              if (!mounted) return;
               setState(() {
                 _isLoading = true;
                 _currentUrl = url;
@@ -240,6 +246,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             }
           },
           onProgress: (int progress) {
+            if (!mounted) return;
             setState(() {
               _loadingProgress = progress / 100;
             });
@@ -253,23 +260,19 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
 
   /// Injects JavaScript to prevent automatic focus on page load
   /// but still allows keyboard when user taps on input fields
-  void _disableAutoFocus() {
-    debugPrint('disableAutoFocus called - useCustomKeyboard: ${widget.useCustomKeyboard}');
-    if (widget.useCustomKeyboard) {
-      _setupCustomKeyboard();
-    } else {
-      _controller.runJavaScript('''
-        // Blur any currently focused element (prevents auto-focus on load)
-        if (document.activeElement && document.activeElement.tagName !== 'BODY') {
-          document.activeElement.blur();
-        }
-        
-        // Remove autofocus attribute from all elements
-        document.querySelectorAll('[autofocus]').forEach(function(elem) {
-          elem.removeAttribute('autofocus');
-        });
-      ''');
-    }
+  void _preventAutoFocus() {
+    debugPrint('preventAutoFocus called');
+    _controller.runJavaScript('''
+      // Blur any currently focused element (prevents auto-focus on load)
+      if (document.activeElement && document.activeElement.tagName !== 'BODY') {
+        document.activeElement.blur();
+      }
+      
+      // Remove autofocus attribute from all elements
+      document.querySelectorAll('[autofocus]').forEach(function(elem) {
+        elem.removeAttribute('autofocus');
+      });
+    ''');
   }
 
   /// Disables copy, paste, and cut operations on input fields
@@ -528,15 +531,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             subtree: true
           });
 
-          // Blur any currently focused element
-          if (document.activeElement && document.activeElement.tagName !== 'BODY') {
-            document.activeElement.blur();
-          }
-
-          // Remove autofocus attribute from all elements
-          document.querySelectorAll('[autofocus]').forEach(function(elem) {
-            elem.removeAttribute('autofocus');
-          });
+          // No need to blur or remove autofocus here, handled separately
         }
 
         console.log('Custom keyboard JavaScript injected');
@@ -569,6 +564,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     try {
       // Use custom icon URL if available
       if (_customIconUrl.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
           _faviconUrl = _customIconUrl;
         });
@@ -577,6 +573,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       
       final uri = Uri.parse(_currentUrl);
       // Use Google's favicon service as a fallback
+      if (!mounted) return;
       setState(() {
         _faviconUrl = 'https://www.google.com/s2/favicons?domain=${uri.host}&sz=64';
       });
