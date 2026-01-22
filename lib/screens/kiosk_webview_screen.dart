@@ -197,6 +197,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           });
         },
       )
+      ..addJavaScriptChannel(
+        'debugLog',
+        onMessageReceived: (JavaScriptMessage message) {
+          debugPrint('WebView Debug: ${message.message}');
+        },
+      )
       // Load blank page first, then actual URL
       ..loadHtmlString('<html><head><style>body { background: white; margin: 0; }</style></head><body></body></html>')
       ..setNavigationDelegate(
@@ -296,7 +302,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           style.textContent = cssText;
           document.head.appendChild(style);
         }
-        document.querySelectorAll('input, textarea').forEach(function(el) {
+        document.querySelectorAll('input, textarea, [contenteditable]').forEach(function(el) {
           if (!el.hasAttribute('data-inputmode-set')) {
             el.setAttribute('inputmode', 'none');
             el.setAttribute('data-inputmode-set', 'true');
@@ -366,7 +372,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         }
 
         // Apply to existing elements
-        document.querySelectorAll('input, textarea').forEach(disableCopyPaste);
+        document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"]').forEach(disableCopyPaste);
         ''' : ''}
 
         // Set up input listeners (only if not already set up)
@@ -374,13 +380,18 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           window.inputListenersSetup = true;
 
           function setupInputListeners() {
-            const inputs = document.querySelectorAll('input, textarea');
+            const inputs = document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
+            console.log('Found ' + inputs.length + ' input elements');
+            debugLog.postMessage('Found ' + inputs.length + ' input elements');
             inputs.forEach(function(input) {
+              console.log('Setting up input:', input.tagName, input.type, input.contentEditable, input.getAttribute('role'));
+              debugLog.postMessage('Setting up input: ' + input.tagName + ' ' + input.type + ' ' + input.contentEditable + ' ' + input.getAttribute('role'));
               if (!input.hasAttribute('data-custom-keyboard')) {
                 input.setAttribute('data-custom-keyboard', 'true');
                 ${widget.disableCopyPaste ? 'disableCopyPaste(input);' : ''}
                 input.addEventListener('focus', function(e) {
                   console.log('Custom keyboard: Input field focused');
+                  debugLog.postMessage('Custom keyboard: Input field focused');
                   e.preventDefault();
                   e.stopPropagation();
                   
@@ -416,6 +427,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   console.log('Custom keyboard: Input field blurred');
                   hideCustomKeyboard.postMessage('hide');
                 });
+                input.addEventListener('input', function(e) {
+                  console.log('External input detected: ' + e.target.value);
+                });
               }
             });
           }
@@ -428,7 +442,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             mutations.forEach(function(mutation) {
               mutation.addedNodes.forEach(function(node) {
                 if (node.nodeType === 1) {
-                  if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
+                  if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
                     if (!node.hasAttribute('data-custom-keyboard')) {
                       node.setAttribute('data-custom-keyboard', 'true');
                       node.setAttribute('inputmode', 'none');
@@ -463,6 +477,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                         }, 10);
                         
+                        console.log('Sending show message to custom keyboard');
+                        console.log('showCustomKeyboard object:', showCustomKeyboard);
+                        console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
                         showCustomKeyboard.postMessage('show');
                         return false;
                       });
@@ -470,9 +487,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         console.log('Custom keyboard: Input field blurred');
                         hideCustomKeyboard.postMessage('hide');
                       });
+                      node.addEventListener('input', function(e) {
+                        console.log('External input detected: ' + e.target.value || e.target.textContent);
+                      });
                     }
                   } else {
-                    const inputs = node.querySelectorAll('input, textarea');
+                    const inputs = node.querySelectorAll('input, textarea, [contenteditable]');
                     inputs.forEach(function(input) {
                       if (!input.hasAttribute('data-custom-keyboard')) {
                         input.setAttribute('data-custom-keyboard', 'true');
@@ -515,6 +535,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           console.log('Custom keyboard: Input field blurred');
                           hideCustomKeyboard.postMessage('hide');
                         });
+                        input.addEventListener('input', function(e) {
+                          console.log('External input detected: ' + e.target.value);
+                        });
+                        input.addEventListener('input', function(e) {
+                          console.log('External input detected: ' + e.target.value);
+                        });
                       }
                     });
                     if (inputs.length > 0) {
@@ -529,6 +555,140 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           observer.observe(document.body, {
             childList: true,
             subtree: true
+          });
+
+          // Global focus listener for debugging
+          document.addEventListener('focus', function(e) {
+            console.log('Global focus event on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
+            debugLog.postMessage('Global focus event on: ' + e.target.tagName + ' ' + e.target.type + ' ' + e.target.contentEditable + ' ' + e.target.getAttribute('role'));
+          }, true);
+
+          // Handle iframes
+          document.querySelectorAll('iframe').forEach(function(iframe) {
+            try {
+              var doc = iframe.contentDocument || iframe.contentWindow.document;
+              if (doc) {
+                var script = doc.createElement('script');
+                script.textContent = \`
+                  function setupInputListeners() {
+                    const inputs = document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
+                    console.log('Found ' + inputs.length + ' input elements in iframe');
+                    inputs.forEach(function(input) {
+                      if (!input.hasAttribute('data-custom-keyboard')) {
+                        input.setAttribute('data-custom-keyboard', 'true');
+                        input.setAttribute('inputmode', 'none');
+                        input.addEventListener('focus', function(e) {
+                          console.log('Custom keyboard: Input field focused in iframe');
+                          e.preventDefault();
+                          e.stopPropagation();
+                          var target = e.target;
+                          target.setAttribute('inputmode', 'none');
+                          target.setAttribute('readonly', 'true');
+                          setTimeout(function() {
+                            target.removeAttribute('readonly');
+                            target.focus();
+                            console.log('Sending show message from iframe');
+                            window.parent.postMessage('showCustomKeyboard', '*');
+                          }, 10);
+                        });
+                        input.addEventListener('blur', function(e) {
+                          console.log('Custom keyboard: Input field blurred in iframe');
+                          window.parent.postMessage('hideCustomKeyboard', '*');
+                        });
+                        input.addEventListener('input', function(e) {
+                          console.log('External input detected in iframe: ' + (e.target.value || e.target.textContent));
+                        });
+                      }
+                    });
+                  }
+                  setupInputListeners();
+                  const observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                      mutation.addedNodes.forEach(function(node) {
+                        if (node.nodeType === 1) {
+                          if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
+                            if (!node.hasAttribute('data-custom-keyboard')) {
+                              node.setAttribute('data-custom-keyboard', 'true');
+                              node.setAttribute('inputmode', 'none');
+                              node.addEventListener('focus', function(e) {
+                                console.log('Custom keyboard: Input field focused in iframe');
+                                e.preventDefault();
+                                e.stopPropagation();
+                                var target = e.target;
+                                target.setAttribute('inputmode', 'none');
+                                target.setAttribute('readonly', 'true');
+                                setTimeout(function() {
+                                  target.removeAttribute('readonly');
+                                  target.focus();
+                                  console.log('Sending show message from iframe');
+                                  window.parent.postMessage('showCustomKeyboard', '*');
+                                }, 10);
+                              });
+                              node.addEventListener('blur', function(e) {
+                                console.log('Custom keyboard: Input field blurred in iframe');
+                                window.parent.postMessage('hideCustomKeyboard', '*');
+                              });
+                              node.addEventListener('input', function(e) {
+                                console.log('External input detected in iframe: ' + (e.target.value || e.target.textContent));
+                              });
+                            }
+                          }
+                          const inputs = node.querySelectorAll('input, textarea, [contenteditable]');
+                          inputs.forEach(function(input) {
+                            if (!input.hasAttribute('data-custom-keyboard')) {
+                              input.setAttribute('data-custom-keyboard', 'true');
+                              input.setAttribute('inputmode', 'none');
+                              input.addEventListener('focus', function(e) {
+                                console.log('Custom keyboard: Input field focused in iframe');
+                                e.preventDefault();
+                                e.stopPropagation();
+                                var target = e.target;
+                                target.setAttribute('inputmode', 'none');
+                                target.setAttribute('readonly', 'true');
+                                setTimeout(function() {
+                                  target.removeAttribute('readonly');
+                                  target.focus();
+                                  console.log('Sending show message from iframe');
+                                  window.parent.postMessage('showCustomKeyboard', '*');
+                                }, 10);
+                              });
+                              input.addEventListener('blur', function(e) {
+                                console.log('Custom keyboard: Input field blurred in iframe');
+                                window.parent.postMessage('hideCustomKeyboard', '*');
+                              });
+                              input.addEventListener('input', function(e) {
+                                console.log('External input detected in iframe: ' + (e.target.value || e.target.textContent));
+                              });
+                            }
+                          });
+                        }
+                      });
+                    });
+                  });
+                  observer.observe(doc.body, { childList: true, subtree: true });
+                  doc.addEventListener('focus', function(e) {
+                    console.log('Global focus event in iframe on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
+                    window.parent.postMessage('debugLog:' + 'Global focus event in iframe on: ' + e.target.tagName + ' ' + e.target.type + ' ' + e.target.contentEditable + ' ' + e.target.getAttribute('role'), '*');
+                  }, true);
+                \`;
+                doc.head.appendChild(script);
+              }
+            } catch (e) {
+              console.log('Cannot access iframe');
+            }
+          });
+
+          // Listen for messages from iframes
+          window.addEventListener('message', function(e) {
+            if (e.data === 'showCustomKeyboard') {
+              console.log('Received show from iframe');
+              showCustomKeyboard.postMessage('show');
+            } else if (e.data === 'hideCustomKeyboard') {
+              console.log('Received hide from iframe');
+              hideCustomKeyboard.postMessage('hide');
+            } else if (typeof e.data === 'string' && e.data.startsWith('debugLog:')) {
+              debugLog.postMessage(e.data.substring(9));
+            }
           });
 
           // No need to blur or remove autofocus here, handled separately
@@ -1850,7 +2010,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               child: SizedBox(
                 height: 104, // Spans 2 rows: 50 + 4 + 50
                 child: ElevatedButton(
-                  onPressed: () => _onKeyboardKeyPressed('\n'),
+                  onPressed: () => _onKeyboardKeyPressed('⏎'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey.shade600,
                     foregroundColor: Colors.white,
@@ -1974,7 +2134,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               const SizedBox(width: 4),
               Expanded(child: _buildKeyboardButton('.')),
               const SizedBox(width: 4),
-              Expanded(child: _buildKeyboardButton('\n')), // Enter key
+              Expanded(child: _buildKeyboardButton('⏎')), // Enter key
             ],
           ),
         ),
@@ -2276,7 +2436,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       flex: 2,
                       child: SizedBox(
                         height: 104, // Full height for both rows
-                        child: _buildKeyboardButton('\n'), // Enter key
+                        child: _buildKeyboardButton('⏎'), // Enter key
                       ),
                     ),
                   ],
@@ -2489,7 +2649,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                     child: SizedBox(
                       height: 104, // Spans 2 rows: 50 + 4 + 50
                       child: ElevatedButton(
-                        onPressed: () => _onKeyboardKeyPressed('\n'),
+                        onPressed: () => _onKeyboardKeyPressed('⏎'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey.shade600,
                           foregroundColor: Colors.white,
@@ -2520,7 +2680,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     String displayText;
     if (isBackspace) {
       displayText = '⌫';
-    } else if (text == '\n') {
+    } else if (text == '⏎') {
       displayText = '⏎';
     } else if (RegExp(r'^[a-zA-Z]$').hasMatch(text)) {
       // For single letters, show uppercase if Caps Lock or Shift is active
@@ -2650,29 +2810,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           const input = document.activeElement;
           input.value = '';
           input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      ''');
-    } else if (key == '\n') {
-      // Enter key - try to submit form or add newline
-      _controller.runJavaScript('''
-        if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          const input = document.activeElement;
-          
-          // If it's a textarea, add newline
-          if (input.tagName === 'TEXTAREA') {
-            const start = input.selectionStart;
-            const end = input.selectionEnd;
-            input.setRangeText('\\n', start, end, 'end');
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          } else {
-            // For input fields, try to submit the form
-            const form = input.closest('form');
-            if (form) {
-              const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-              form.dispatchEvent(submitEvent);
-            }
-          }
-          
         }
       ''');
     } else if (key == '⌫') {
@@ -2832,76 +2969,47 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       );
       _saveKeyboardPosition();
     } else if (key == '⏎') {
-      // Enter key - handle form submission, field navigation, or newline insertion
+      // Enter key - dispatch native enter key events to let the page handle it
       _controller.runJavaScript('''
-        console.log('Keyboard: Enter key pressed');
+        console.log('Keyboard: Enter key pressed, dispatching native events');
         if (document.activeElement) {
-          const element = document.activeElement;
+          // Dispatch keydown event
+          const keydownEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            charCode: 0,
+            bubbles: true,
+            cancelable: true
+          });
+          document.activeElement.dispatchEvent(keydownEvent);
           
-          // If it's a textarea, insert newline
-          if (element.tagName === 'TEXTAREA') {
-            console.log('Keyboard: textarea detected, inserting newline');
-            if (element.selectionStart !== null && element.selectionEnd !== null) {
-              const start = element.selectionStart;
-              const end = element.selectionEnd;
-              element.setRangeText('\\n', start, end, 'end');
-              element.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-          }
-          // If it's an input element, handle form navigation or submission
-          else if (element.tagName === 'INPUT') {
-            console.log('Keyboard: input element detected');
-            
-            // Check if this input is part of a form
-            const form = element.closest('form');
-            if (form) {
-              console.log('Keyboard: input is part of a form');
-              
-              // Get all focusable elements in the form
-              const focusableElements = form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), select, textarea, button:not([type="submit"])');
-              const focusableArray = Array.from(focusableElements);
-              const currentIndex = focusableArray.indexOf(element);
-              
-              console.log('Keyboard: current field index:', currentIndex, 'total fields:', focusableArray.length);
-              
-              if (currentIndex >= 0 && currentIndex < focusableArray.length - 1) {
-                // Not the last field, move to next field
-                console.log('Keyboard: moving to next field');
-                const nextElement = focusableArray[currentIndex + 1];
-                nextElement.focus();
-                // If it's an input, select all text for easy replacement
-                if (nextElement.tagName === 'INPUT' && nextElement.type !== 'password') {
-                  nextElement.select();
-                }
-              } else {
-                // Last field or couldn't determine position, try to submit
-                console.log('Keyboard: last field or unknown position, attempting submission');
-                const submitButtons = form.querySelectorAll('input[type="submit"], button[type="submit"], button:not([type])');
-                if (submitButtons.length > 0) {
-                  console.log('Keyboard: clicking submit button');
-                  submitButtons[0].click();
-                } else {
-                  console.log('Keyboard: submitting form directly');
-                  form.submit();
-                }
-              }
-            } else {
-              // Not in a form, insert newline
-              console.log('Keyboard: input not in form, inserting newline');
-              if (element.selectionStart !== null && element.selectionEnd !== null) {
-                const start = element.selectionStart;
-                const end = element.selectionEnd;
-                element.setRangeText('\\n', start, end, 'end');
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-              } else {
-                element.value += '\\n';
-              }
-            }
-          }
-          // For other elements, do nothing
-          else {
-            console.log('Keyboard: active element is not an input or textarea');
-          }
+          // Dispatch keypress event for compatibility
+          const keypressEvent = new KeyboardEvent('keypress', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            charCode: 13,
+            bubbles: true,
+            cancelable: true
+          });
+          document.activeElement.dispatchEvent(keypressEvent);
+          
+          // Dispatch keyup event
+          const keyupEvent = new KeyboardEvent('keyup', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            charCode: 0,
+            bubbles: true,
+            cancelable: true
+          });
+          document.activeElement.dispatchEvent(keyupEvent);
+          
+          console.log('Keyboard: Enter events dispatched');
         } else {
           console.log('Keyboard: no active element found');
         }
