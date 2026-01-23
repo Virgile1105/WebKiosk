@@ -395,32 +395,38 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   e.preventDefault();
                   e.stopPropagation();
                   
-                  // Aggressive IME prevention strategy
                   var target = e.target;
                   
                   // Set inputmode to none immediately
                   target.setAttribute('inputmode', 'none');
                   
-                  // Temporarily make readonly to prevent IME
-                  target.setAttribute('readonly', 'true');
-                  
-                  // Force blur and refocus to reset IME state
-                  setTimeout(function() {
-                    target.removeAttribute('readonly');
+                  if (target.type === 'password') {
+                    // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                     target.focus();
+                    showCustomKeyboard.postMessage('show');
+                  } else {
+                    // Aggressive IME prevention strategy for other fields
+                    // Temporarily make readonly to prevent IME
+                    target.setAttribute('readonly', 'true');
                     
-                    // Add one-time listeners to prevent IME reactivation
-                    function preventIMEReactivation(te) {
-                      te.preventDefault();
-                      te.stopPropagation();
-                      target.removeEventListener('touchstart', preventIMEReactivation);
-                      target.removeEventListener('mousedown', preventIMEReactivation);
-                    }
-                    target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                    target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                  }, 10);
-                  
-                  showCustomKeyboard.postMessage('show');
+                    // Force blur and refocus to reset IME state
+                    setTimeout(function() {
+                      target.removeAttribute('readonly');
+                      target.focus();
+                      
+                      // Add one-time listeners to prevent IME reactivation
+                      function preventIMEReactivation(te) {
+                        te.preventDefault();
+                        te.stopPropagation();
+                        target.removeEventListener('touchstart', preventIMEReactivation);
+                        target.removeEventListener('mousedown', preventIMEReactivation);
+                      }
+                      target.addEventListener('touchstart', preventIMEReactivation, { once: true });
+                      target.addEventListener('mousedown', preventIMEReactivation, { once: true });
+                    }, 10);
+                    
+                    showCustomKeyboard.postMessage('show');
+                  }
                   return false;
                 });
                 input.addEventListener('blur', function(e) {
@@ -452,35 +458,41 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         e.preventDefault();
                         e.stopPropagation();
                         
-                        // Aggressive IME prevention strategy
                         var target = e.target;
                         
                         // Set inputmode to none immediately
                         target.setAttribute('inputmode', 'none');
                         
-                        // Temporarily make readonly to prevent IME
-                        target.setAttribute('readonly', 'true');
-                        
-                        // Force blur and refocus to reset IME state
-                        setTimeout(function() {
-                          target.removeAttribute('readonly');
+                        if (target.type === 'password') {
+                          // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                           target.focus();
+                          showCustomKeyboard.postMessage('show');
+                        } else {
+                          // Aggressive IME prevention strategy for other fields
+                          // Temporarily make readonly to prevent IME
+                          target.setAttribute('readonly', 'true');
                           
-                          // Add one-time listeners to prevent IME reactivation
-                          function preventIMEReactivation(te) {
-                            te.preventDefault();
-                            te.stopPropagation();
-                            target.removeEventListener('touchstart', preventIMEReactivation);
-                            target.removeEventListener('mousedown', preventIMEReactivation);
-                          }
-                          target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                          target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                        }, 10);
-                        
-                        console.log('Sending show message to custom keyboard');
-                        console.log('showCustomKeyboard object:', showCustomKeyboard);
-                        console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
-                        showCustomKeyboard.postMessage('show');
+                          // Force blur and refocus to reset IME state
+                          setTimeout(function() {
+                            target.removeAttribute('readonly');
+                            target.focus();
+                            
+                            // Add one-time listeners to prevent IME reactivation
+                            function preventIMEReactivation(te) {
+                              te.preventDefault();
+                              te.stopPropagation();
+                              target.removeEventListener('touchstart', preventIMEReactivation);
+                              target.removeEventListener('mousedown', preventIMEReactivation);
+                            }
+                            target.addEventListener('touchstart', preventIMEReactivation, { once: true });
+                            target.addEventListener('mousedown', preventIMEReactivation, { once: true });
+                          }, 10);
+                          
+                          console.log('Sending show message to custom keyboard');
+                          console.log('showCustomKeyboard object:', showCustomKeyboard);
+                          console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
+                          showCustomKeyboard.postMessage('show');
+                        }
                         return false;
                       });
                       node.addEventListener('blur', function(e) {
@@ -503,32 +515,38 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           e.preventDefault();
                           e.stopPropagation();
                           
-                          // Aggressive IME prevention strategy
                           var target = e.target;
                           
                           // Set inputmode to none immediately
                           target.setAttribute('inputmode', 'none');
                           
-                          // Temporarily make readonly to prevent IME
-                          target.setAttribute('readonly', 'true');
-                          
-                          // Force blur and refocus to reset IME state
-                          setTimeout(function() {
-                            target.removeAttribute('readonly');
+                          if (target.type === 'password') {
+                            // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                             target.focus();
+                            showCustomKeyboard.postMessage('show');
+                          } else {
+                            // Aggressive IME prevention strategy for other fields
+                            // Temporarily make readonly to prevent IME
+                            target.setAttribute('readonly', 'true');
                             
-                            // Add one-time listeners to prevent IME reactivation
-                            function preventIMEReactivation(te) {
-                              te.preventDefault();
-                              te.stopPropagation();
-                              target.removeEventListener('touchstart', preventIMEReactivation);
-                              target.removeEventListener('mousedown', preventIMEReactivation);
-                            }
-                            target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                            target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                          }, 10);
-                          
-                          showCustomKeyboard.postMessage('show');
+                            // Force blur and refocus to reset IME state
+                            setTimeout(function() {
+                              target.removeAttribute('readonly');
+                              target.focus();
+                              
+                              // Add one-time listeners to prevent IME reactivation
+                              function preventIMEReactivation(te) {
+                                te.preventDefault();
+                                te.stopPropagation();
+                                target.removeEventListener('touchstart', preventIMEReactivation);
+                                target.removeEventListener('mousedown', preventIMEReactivation);
+                              }
+                              target.addEventListener('touchstart', preventIMEReactivation, { once: true });
+                              target.addEventListener('mousedown', preventIMEReactivation, { once: true });
+                            }, 10);
+                            
+                            showCustomKeyboard.postMessage('show');
+                          }
                           return false;
                         });
                         input.addEventListener('blur', function(e) {
