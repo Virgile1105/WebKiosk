@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
@@ -39,6 +40,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   bool _isShift = false; // Track Shift state (temporary, toggles off after use)
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
+  Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
+  bool _keyboardHasBeenPositioned = false; // Track if keyboard has been positioned at least once
+  double _keyboardScale = 0.8; // Scaling factor for keyboard size
+  String _appVersion = '';
 
   @override
   void didChangeDependencies() {
@@ -47,21 +52,22 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     
     // Always clamp keyboard position to current screen bounds
     // Use maximum keyboard width to ensure it fits in both normal and expanded modes
-    final keyboardWidth = 876.0; // Maximum width (expanded mode)
-    final keyboardHeight = 352.0;
+    final keyboardWidth = 876.0 * _keyboardScale; // Maximum width (expanded mode)
+    final keyboardHeight = 352.0 * _keyboardScale;
     final maxKeyboardX = screenSize.width - keyboardWidth - 20.0;
     final maxKeyboardY = screenSize.height - keyboardHeight - 20.0;
     
-    // If position is still the temporary default, set to bottom-right
+    // If position is still the temporary default and keyboard hasn't been positioned yet, set to bottom-right
     // Use normal keyboard width for default positioning since keyboard starts in normal mode
-    if (_keyboardPosition == const Offset(100, 200)) {
-      final defaultKeyboardWidth = 240.0; // Normal mode width
+    if (_keyboardPosition == const Offset(100, 200) && !_keyboardHasBeenPositioned) {
+      final defaultKeyboardWidth = 240.0 * _keyboardScale; // Normal mode width
       _keyboardPosition = Offset(
         screenSize.width - defaultKeyboardWidth - 20,  // Bottom-right x
         screenSize.height - keyboardHeight - 20, // Bottom-right y
       );
-    } else {
-      // Clamp existing position to new screen bounds
+      _keyboardHasBeenPositioned = true;
+    } else if (_keyboardPosition != const Offset(100, 200)) {
+      // Clamp existing position to new screen bounds (only if it's not the temporary default)
       // Ensure clamp range is valid (min <= max)
       final minX = 20.0;
       final minY = 20.0;
@@ -75,7 +81,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     }
     
     // Always clamp minimized icon position to current screen bounds
-    final iconSize = 60.0;
+    final iconSize = 60.0 * _keyboardScale;
     final maxIconX = screenSize.width - iconSize - 10.0;
     final maxIconY = screenSize.height - iconSize - 10.0;
     
@@ -105,28 +111,53 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     super.initState(); 
     _initializeWebView();
     _loadCustomSettings(); // Fire-and-forget async loading
+    _loadAppVersion(); // Load app version
   }
 
   Future<void> _loadCustomSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _customAppName = prefs.getString('custom_app_name') ?? '';
-      _customIconUrl = prefs.getString('custom_icon_url') ?? '';
-      // Load keyboard position - if none saved, will be set to default in didChangeDependencies
-      final keyboardX = prefs.getDouble('keyboard_position_x');
-      final keyboardY = prefs.getDouble('keyboard_position_y');
-      if (keyboardX != null && keyboardY != null) {
-        _keyboardPosition = Offset(keyboardX, keyboardY);
+    if (mounted) {
+      setState(() {
+        _customAppName = prefs.getString('custom_app_name') ?? '';
+        _customIconUrl = prefs.getString('custom_icon_url') ?? '';
+
+        // Load saved expanded keyboard position
+        final keyboardX = prefs.getDouble('keyboard_position_x');
+        final keyboardY = prefs.getDouble('keyboard_position_y');
+        if (keyboardX != null && keyboardY != null) {
+          _savedExpandedKeyboardPosition = Offset(keyboardX, keyboardY);
+          _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
+        }
+
+        // Load minimized icon position only (not keyboard position for numeric mode)
+        final iconX = prefs.getDouble('minimized_icon_position_x');
+        final iconY = prefs.getDouble('minimized_icon_position_y');
+        if (iconX != null && iconY != null) {
+          _minimizedIconPosition = Offset(iconX, iconY);
+        }
+
+        // For numeric keyboard, always start at bottom-right (don't load saved position)
+        // Expanded keyboard position will be loaded when switching modes
+      });
+    }
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';  // e.g., "1.0.0+5"
+        });
       }
-      // Load minimized icon position
-      final iconX = prefs.getDouble('minimized_icon_position_x');
-      final iconY = prefs.getDouble('minimized_icon_position_y');
-      if (iconX != null && iconY != null) {
-        _minimizedIconPosition = Offset(iconX, iconY);
+    } catch (e) {
+      debugPrint('Error fetching app version: $e');
+      if (mounted) {
+        setState(() {
+          _appVersion = 'Unknown';
+        });
       }
-      // If no saved position, _keyboardPosition remains as temporary default
-      // and will be set to bottom-right in didChangeDependencies
-    });
+    }
   }
 
   Future<void> _saveCustomAppName(String name) async {
@@ -161,9 +192,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   }
 
   Future<void> _saveKeyboardPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
-    await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
+    // Only save keyboard position when in expanded mode
+    // Numeric mode always defaults to bottom-right
+    if (_isExpandedMode) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
+      await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
+    }
   }
 
   Future<void> _saveMinimizedIconPosition() async {
@@ -400,7 +435,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   // Set inputmode to none immediately
                   target.setAttribute('inputmode', 'none');
                   
-                  if (target.type === 'password') {
+                  if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                     // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                     target.focus();
                     showCustomKeyboard.postMessage('show');
@@ -463,7 +498,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         // Set inputmode to none immediately
                         target.setAttribute('inputmode', 'none');
                         
-                        if (target.type === 'password') {
+                        if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                           // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                           target.focus();
                           showCustomKeyboard.postMessage('show');
@@ -520,7 +555,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           // Set inputmode to none immediately
                           target.setAttribute('inputmode', 'none');
                           
-                          if (target.type === 'password') {
+                          if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                             // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                             target.focus();
                             showCustomKeyboard.postMessage('show');
@@ -916,6 +951,38 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         ),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // App Version Display
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'App Version: $_appVersion',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white,
                       ),
                     ),
                   ],
@@ -1720,7 +1787,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               
               // Constrain to screen bounds (ensure icon stays visible)
               final screenSize = MediaQuery.of(context).size;
-              final iconSize = 60.0;
+              final iconSize = 60.0 * _keyboardScale;
               
               // Ensure icon doesn't go off screen
               final maxX = screenSize.width - iconSize - 10.0;
@@ -1746,11 +1813,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             });
           },
           child: Container(
-            width: 60,
-            height: 60,
+            width: 60 * _keyboardScale,
+            height: 60 * _keyboardScale,
             decoration: BoxDecoration(
               color: Colors.blue.shade600,
-              borderRadius: BorderRadius.circular(30),
+              borderRadius: BorderRadius.circular(30 * _keyboardScale),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.3),
@@ -1783,8 +1850,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             
             // Constrain to screen bounds (ensure keyboard stays visible)
             final screenSize = MediaQuery.of(context).size;
-            final keyboardWidth = _isExpandedMode ? 876.0 : 240.0; // Wider when expanded to fit AZERTY + numeric
-            final keyboardHeight = 352.0; // Updated height with consistent button heights
+            final keyboardWidth = (_isExpandedMode ? 876.0 : 240.0) * _keyboardScale; // Wider when expanded to fit AZERTY + numeric
+            final keyboardHeight = 352.0 * _keyboardScale; // Updated height with consistent button heights
             
             // Ensure keyboard doesn't go off screen
             final maxX = screenSize.width - keyboardWidth - 20.0;
@@ -1805,8 +1872,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           _saveKeyboardPosition();
         },
         child: Container(
-          width: _isExpandedMode ? 876.0 : 240.0,
-          padding: const EdgeInsets.all(12),
+          width: (_isExpandedMode ? 876.0 : 240.0) * _keyboardScale,
+          height: 352.0 * _keyboardScale,
+          padding: EdgeInsets.all(12 * _keyboardScale),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -1821,32 +1889,54 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Row 1: Drag bar (3 columns) + Hide button
+              // Row 1: Scale button + Drag bar (2 columns) + Hide button
               SizedBox(
-                height: 50,
+                height: 50 * _keyboardScale,
                 child: Row(
                   children: [
                     Expanded(
-                      flex: 3,
+                      flex: 1,
+                      child: SizedBox(
+                        height: 50 * _keyboardScale,
+                        child: ElevatedButton(
+                          onPressed: _showScaleSettingsDialog,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6 * _keyboardScale),
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.settings,
+                            size: 20 * _keyboardScale,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 8 * _keyboardScale),
+                    Expanded(
+                      flex: 2,
                       child: Container(
                         height: double.infinity, // Fill full height
                         alignment: Alignment.center, // Center the icon
                         decoration: BoxDecoration(
                           color: Colors.blue.shade100,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(6 * _keyboardScale),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.drag_handle,
                           color: Colors.blue,
-                          size: 24,
+                          size: 24 * _keyboardScale,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8 * _keyboardScale),
                     Expanded(
                       flex: 1,
                       child: SizedBox(
-                        height: 50,
+                        height: 50 * _keyboardScale,
                         child: ElevatedButton(
                           onPressed: () {
                             setState(() {
@@ -1854,21 +1944,21 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                             });
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade600,
+                            backgroundColor: Colors.blue,
                             foregroundColor: Colors.white,
                             padding: EdgeInsets.zero,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(6 * _keyboardScale),
                             ),
                           ),
-                          child: const Text('▼', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          child: Text('▼', style: TextStyle(fontSize: 18 * _keyboardScale, fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              SizedBox(height: 8 * _keyboardScale),
               // Conditional keyboard content based on mode
               _isExpandedMode ? _buildExpandedKeyboardContent() : _buildNumericKeyboardContent(),
             ],
@@ -1885,20 +1975,20 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       children: [
         // Row 2: ABC, ←, →, CLEAR
         SizedBox(
-          height: 50,
+          height: 50 * _keyboardScale,
           child: Row(
             children: [
               Expanded(child: _buildKeyboardButton('ABC')),
-              const SizedBox(width: 6),
+              SizedBox(width: 6 * _keyboardScale),
               Expanded(child: _buildKeyboardButton('←', backgroundColor: Colors.grey.shade600)),
-              const SizedBox(width: 6),
+              SizedBox(width: 6 * _keyboardScale),
               Expanded(child: _buildKeyboardButton('→', backgroundColor: Colors.grey.shade600)),
-              const SizedBox(width: 6),
+              SizedBox(width: 6 * _keyboardScale),
               Expanded(child: _buildKeyboardButton('CE', backgroundColor: Colors.grey.shade600)),
             ],
           ),
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: 6 * _keyboardScale),
         // Row 3 & 4: Numbers with DELETE button spanning both rows
         Row(
           children: [
@@ -1909,27 +1999,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 children: [
                   // Row 3: 7, 8, 9
                   SizedBox(
-                    height: 50,
+                    height: 50 * _keyboardScale,
                     child: Row(
                       children: [
                         Expanded(child: _buildKeyboardButton('7')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('8')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('9')),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4 * _keyboardScale),
                   // Row 4: 4, 5, 6
                   SizedBox(
-                    height: 50,
+                    height: 50 * _keyboardScale,
                     child: Row(
                       children: [
                         Expanded(child: _buildKeyboardButton('4')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('5')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('6')),
                       ],
                     ),
@@ -1937,32 +2027,32 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: 6 * _keyboardScale),
             // DELETE button spanning rows 3 & 4
             Expanded(
               flex: 1,
               child: SizedBox(
-                height: 104, // Spans 2 rows: 50 + 4 + 50
+                height: 104 * _keyboardScale, // Spans 2 rows: 50 + 4 + 50
                 child: ElevatedButton(
                   onPressed: () => _onKeyboardKeyPressed('', isBackspace: true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey.shade600,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.all(1),
+                    padding: EdgeInsets.all(1 * _keyboardScale),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(6 * _keyboardScale),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     '⌫',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 20 * _keyboardScale, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: 6 * _keyboardScale),
         // Row 5 & 6: Numbers with Enter button spanning both rows
         Row(
           children: [
@@ -1973,44 +2063,44 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 children: [
                   // Row 5: 1, 2, 3
                   SizedBox(
-                    height: 50,
+                    height: 50 * _keyboardScale,
                     child: Row(
                       children: [
                         Expanded(child: _buildKeyboardButton('1')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('2')),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(child: _buildKeyboardButton('3')),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4 * _keyboardScale),
                   // Row 6: 0 (spans 2 columns), .
                   SizedBox(
-                    height: 50,
+                    height: 50 * _keyboardScale,
                     child: Row(
                       children: [
                         Expanded(
                           flex: 2,
                           child: SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: ElevatedButton(
                               onPressed: () => _onKeyboardKeyPressed('0'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.grey.shade600,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius: BorderRadius.circular(6 * _keyboardScale),
                                 ),
                               ),
-                              child: const Text(
+                              child: Text(
                                 '0',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                style: TextStyle(fontSize: 18 * _keyboardScale, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        SizedBox(width: 4 * _keyboardScale),
                         Expanded(
                           flex: 1,
                           child: _buildKeyboardButton('.'),
@@ -2021,25 +2111,25 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: 6 * _keyboardScale),
             // Enter button spanning rows 5 & 6
             Expanded(
               flex: 1,
               child: SizedBox(
-                height: 104, // Spans 2 rows: 50 + 4 + 50
+                height: 104 * _keyboardScale, // Spans 2 rows: 50 + 4 + 50
                 child: ElevatedButton(
                   onPressed: () => _onKeyboardKeyPressed('⏎'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.grey.shade600,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.all(1), // Reduced padding
+                    padding: EdgeInsets.all(1 * _keyboardScale), // Reduced padding
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(6 * _keyboardScale),
                     ),
                   ),
-                  child: const Text(
+                  child: Text(
                     '⏎',
-                    style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 25 * _keyboardScale, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -2179,54 +2269,54 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       children: [
         // Main AZERTY keyboard (600px wide for full layout)
         SizedBox(
-          width: 600.0,
+          width: 600.0 * _keyboardScale,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // Row 1: & é " ' ( - è _ ç à ) = ⌫
               SizedBox(
-                height: 50,
+                height: 50 * _keyboardScale,
                 child: Row(
                   children: [
                     Expanded(child: _buildKeyboardButton('&')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('é')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('"')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton("'")),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('(')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('-')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('è')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('_')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('ç')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('à')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton(')')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('=')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 2, child: _buildKeyboardButton('⌫', backgroundColor: Colors.grey.shade600)),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4 * _keyboardScale),
               // Rows 2 & 3: Combined layout with merged ENTER key
               SizedBox(
-                height: 104, // 50 + 4 + 50 = 104 for two rows with spacing
+                height: 104 * _keyboardScale, // 50 + 4 + 50 = 104 for two rows with spacing
                 child: Row(
                   children: [
                     // Column 1: 123 key to switch back to numeric keyboard
                     Expanded(
                       flex: 2,
                       child: SizedBox(
-                        height: 104, // Full height for both rows
+                        height: 104 * _keyboardScale, // Full height for both rows
                         child: ElevatedButton(
                           onPressed: () => _onKeyboardKeyPressed('123'),
                           style: ElevatedButton.styleFrom(
@@ -2234,280 +2324,280 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                             foregroundColor: Colors.white,
                             padding: EdgeInsets.zero,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(6 * _keyboardScale),
                             ),
                           ),
-                          child: const Text(
+                          child: Text(
                             '123',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 20 * _keyboardScale, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 2: A (Row 2) / Q (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('a'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('q'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 3: Z (Row 2) / S (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('z'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('s'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 4: E (Row 2) / D (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('e'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('d'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 5: R (Row 2) / F (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('r'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('f'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 6: T (Row 2) / G (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('t'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('g'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 7: Y (Row 2) / H (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('y'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('h'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 8: U (Row 2) / J (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('u'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('j'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 9: I (Row 2) / K (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('i'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('k'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 10: O (Row 2) / L (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('o'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('l'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 11: P (Row 2) / M (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('p'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('m'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 12: ^ (Row 2) / ù (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('^'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('ù'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 13: $ (Row 2) / * (Row 3)
                     Expanded(
                       child: Column(
                         children: [
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('\$'),
                           ),
-                          const SizedBox(height: 4),
+                          SizedBox(height: 4 * _keyboardScale),
                           SizedBox(
-                            height: 50,
+                            height: 50 * _keyboardScale,
                             child: _buildKeyboardButton('*'),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     // Column 14: ENTER (spans both rows)
                     Expanded(
                       flex: 2,
                       child: SizedBox(
-                        height: 104, // Full height for both rows
+                        height: 104 * _keyboardScale, // Full height for both rows
                         child: _buildKeyboardButton('⏎'), // Enter key
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4 * _keyboardScale),
               // Row 4: ⇪ < w x c v b n , ; : ! ⇪
               SizedBox(
-                height: 50,
+                height: 50 * _keyboardScale,
                 child: Row(
                   children: [
                     Expanded(flex: 2, child: _buildKeyboardButton(_isShift ? '⇪' : '⇪', backgroundColor: _isShift ? Colors.blue.shade600 : Colors.grey.shade600)),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('<')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('w')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('x')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('c')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('v')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('b')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('n')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton(',')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton(';')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton(':')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('!')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 2, child: _buildKeyboardButton(_isShift ? '⇪' : '⇪', backgroundColor: _isShift ? Colors.blue.shade600 : Colors.grey.shade600)),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: 4 * _keyboardScale),
               // Row 5: ← → ESPACE
               SizedBox(
-                height: 50,
+                height: 50 * _keyboardScale,
                 child: Row(
                   children: [
                     Expanded(flex: 1, child: _buildKeyboardButton('←')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 1, child: _buildKeyboardButton('→')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 6, child: _buildKeyboardButton(' ')), // Space bar
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 1, child: _buildKeyboardButton('↑')),
-                    const SizedBox(width: 4),
+                    SizedBox(width: 4 * _keyboardScale),
                     Expanded(flex: 1, child: _buildKeyboardButton('↓')),
                   ],
                 ),
@@ -2515,29 +2605,29 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             ],
           ),
         ),
-        const SizedBox(width: 4), // Gap between main keyboard and numeric sections
+        SizedBox(width: 4 * _keyboardScale), // Gap between main keyboard and numeric sections
         // Right side: Numeric keyboard (240px wide, same as compact mode)
         SizedBox(
-          width: 240.0,
+          width: 240.0 * _keyboardScale,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // Row 2: 123, ←, →, CLEAR
               SizedBox(
-                height: 50,
+                height: 50 * _keyboardScale,
                 child: Row(
                   children: [
                     Expanded(child: _buildKeyboardButton('123')),
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('←', backgroundColor: Colors.grey.shade600)),
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('→', backgroundColor: Colors.grey.shade600)),
-                    const SizedBox(width: 6),
+                    SizedBox(width: 6 * _keyboardScale),
                     Expanded(child: _buildKeyboardButton('CE', backgroundColor: Colors.grey.shade600)),
                   ],
                 ),
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: 6 * _keyboardScale),
               // Row 3 & 4: Numbers with DELETE button spanning both rows
               Row(
                 children: [
@@ -2548,27 +2638,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       children: [
                         // Row 3: 7, 8, 9
                         SizedBox(
-                          height: 50,
+                          height: 50 * _keyboardScale,
                           child: Row(
                             children: [
                               Expanded(child: _buildKeyboardButton('7')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('8')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('9')),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: 4 * _keyboardScale),
                         // Row 4: 4, 5, 6
                         SizedBox(
-                          height: 50,
+                          height: 50 * _keyboardScale,
                           child: Row(
                             children: [
                               Expanded(child: _buildKeyboardButton('4')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('5')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('6')),
                             ],
                           ),
@@ -2576,32 +2666,32 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6 * _keyboardScale),
                   // DELETE button spanning rows 3 & 4
                   Expanded(
                     flex: 1,
                     child: SizedBox(
-                      height: 104, // Spans 2 rows: 50 + 4 + 50
+                      height: 104 * _keyboardScale, // Spans 2 rows: 50 + 4 + 50
                       child: ElevatedButton(
                         onPressed: () => _onKeyboardKeyPressed('', isBackspace: true),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey.shade600,
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.all(1),
+                          padding: EdgeInsets.all(1 * _keyboardScale),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(6 * _keyboardScale),
                           ),
                         ),
-                        child: const Text(
+                        child: Text(
                           '⌫',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 20 * _keyboardScale, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: 6 * _keyboardScale),
               // Row 5 & 6: Numbers with Enter button spanning both rows
               Row(
                 children: [
@@ -2612,44 +2702,44 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       children: [
                         // Row 5: 1, 2, 3
                         SizedBox(
-                          height: 50,
+                          height: 50 * _keyboardScale,
                           child: Row(
                             children: [
                               Expanded(child: _buildKeyboardButton('1')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('2')),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(child: _buildKeyboardButton('3')),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: 4 * _keyboardScale),
                         // Row 6: 0 (spans 2 columns), .
                         SizedBox(
-                          height: 50,
+                          height: 50 * _keyboardScale,
                           child: Row(
                             children: [
                               Expanded(
                                 flex: 2,
                                 child: SizedBox(
-                                  height: 50,
+                                  height: 50 * _keyboardScale,
                                   child: ElevatedButton(
                                     onPressed: () => _onKeyboardKeyPressed('0'),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.grey.shade600,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(6),
+                                        borderRadius: BorderRadius.circular(6 * _keyboardScale),
                                       ),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       '0',
-                                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                      style: TextStyle(fontSize: 18 * _keyboardScale, fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4 * _keyboardScale),
                               Expanded(
                                 flex: 1,
                                 child: _buildKeyboardButton('.'),
@@ -2660,25 +2750,26 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6 * _keyboardScale),
                   // Enter button spanning rows 5 & 6
                   Expanded(
                     flex: 1,
                     child: SizedBox(
-                      height: 104, // Spans 2 rows: 50 + 4 + 50
+                      height: 104 * _keyboardScale, // Spans 2 rows: 50 + 4 + 50
                       child: ElevatedButton(
                         onPressed: () => _onKeyboardKeyPressed('⏎'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey.shade600,
                           foregroundColor: Colors.white,
-                          padding: EdgeInsets.all(1), // Reduced padding
+                          padding: EdgeInsets.all(1 * _keyboardScale), // Reduced padding
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(6 * _keyboardScale),
                           ),
                         ),
-                        child: const Text(
+                        child: Text(
                           '⏎',
-                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 20 * _keyboardScale, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
@@ -2692,6 +2783,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     );
   }
 
+  /// Helper method to build keyboard buttons
   /// Helper method to build keyboard buttons
   Widget _buildKeyboardButton(String text, {bool isBackspace = false, Color? backgroundColor, String? keyValue}) {
     // Determine display text based on Caps Lock/Shift state for letters
@@ -2736,7 +2828,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     }
 
     return SizedBox(
-      height: 50,
+      height: 50 * _keyboardScale,
       child: ElevatedButton(
         onPressed: () => _onKeyboardKeyPressed(keyValue ?? text, isBackspace: isBackspace),
         style: ElevatedButton.styleFrom(
@@ -2744,13 +2836,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           foregroundColor: Colors.white,
           padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(6 * _keyboardScale),
           ),
         ),
         child: Text(
           displayText,
           style: TextStyle(
-            fontSize: (displayText == '⇪' ) ? 28 : 20,
+            fontSize: ((displayText == '⇪' ) ? 28 : 20) * _keyboardScale,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -2967,25 +3059,36 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       setState(() {
         _isExpandedMode = false;
       });
-      // Position numeric keyboard at bottom right of the screen
+      // Always position numeric keyboard at bottom-right (don't load saved position)
+      // Numeric mode always defaults to bottom-right
       final screenSize = MediaQuery.of(context).size;
       _keyboardPosition = Offset(
-        screenSize.width - 240.0,
-        screenSize.height - 352.0,
+        screenSize.width - 240.0 * _keyboardScale,
+        screenSize.height - 352.0 * _keyboardScale,
       );
-      _saveKeyboardPosition();
+      // Don't save position for numeric mode - it always defaults to bottom-right
     } else if (key == 'ABC') {
       // Expand to show full keyboard with alphabetic and numeric sections
       setState(() {
         _isExpandedMode = true;
       });
-      // Position keyboard centered horizontally at the bottom of the screen
-      final screenSize = MediaQuery.of(context).size;
-      _keyboardPosition = Offset(
-        (screenSize.width - 876.0) / 2,
-        screenSize.height - 352.0,
-      );
-      _saveKeyboardPosition();
+      // Try to use saved expanded keyboard position, otherwise center at bottom
+      if (_savedExpandedKeyboardPosition != null) {
+        // Load saved position and clamp to screen bounds
+        final screenSize = MediaQuery.of(context).size;
+        final keyboardWidth = 876.0 * _keyboardScale;
+        final keyboardHeight = 352.0 * _keyboardScale;
+        final clampedX = _savedExpandedKeyboardPosition!.dx.clamp(20.0, screenSize.width - keyboardWidth - 20.0);
+        final clampedY = _savedExpandedKeyboardPosition!.dy.clamp(20.0, screenSize.height - keyboardHeight - 20.0);
+        _keyboardPosition = Offset(clampedX, clampedY);
+      } else {
+        // No saved position, center at bottom
+        final screenSize = MediaQuery.of(context).size;
+        _keyboardPosition = Offset(
+          (screenSize.width - 876.0 * _keyboardScale) / 2,
+          screenSize.height - 352.0 * _keyboardScale,
+        );
+      }
     } else if (key == '⏎') {
       // Enter key - dispatch native enter key events to let the page handle it
       _controller.runJavaScript('''
@@ -3093,6 +3196,80 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         }
       ''');
     }
+  }
+
+  void _showScaleSettingsDialog() {
+    double originalScale = _keyboardScale; // Store original scale for cancel
+    double tempScale = _keyboardScale; // Move outside StatefulBuilder
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Keyboard Scale Settings'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Text(
+                      '${(tempScale * 100).round()}%',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: tempScale,
+                    min: 0.7,
+                    max: 1.1,
+                    divisions: 4,
+                    label: '${(tempScale * 100).round()}%',
+                    onChanged: (value) {
+                      setState(() {
+                        tempScale = value;
+                      });
+                      this.setState(() {
+                        _keyboardScale = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    // Cancel: revert to original scale
+                    this.setState(() {
+                      _keyboardScale = originalScale;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    // Apply: keep current scale (already applied in real-time)
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
 import 'kiosk_webview_screen.dart';
 
@@ -15,11 +16,13 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   static const platform = MethodChannel('webkiosk.builder/shortcut');
   List<ShortcutItem> _shortcuts = [];
   bool _isLoading = true;
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
     _loadShortcuts();
+    _loadAppVersion();
   }
 
   Future<void> _loadShortcuts() async {
@@ -34,6 +37,29 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   Future<void> _saveShortcuts() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('shortcuts', ShortcutItem.encodeList(_shortcuts));
+  }
+
+  Future<void> _loadAppVersion() async {
+    debugPrint('Starting to load app version...');
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      debugPrint('PackageInfo loaded - version: ${packageInfo.version}, buildNumber: ${packageInfo.buildNumber}');
+      final versionString = '${packageInfo.version}+${packageInfo.buildNumber}';
+      debugPrint('Final version string: $versionString');
+      if (mounted) {
+        setState(() {
+          _appVersion = versionString;
+        });
+        debugPrint('App version set to: $_appVersion');
+      }
+    } catch (e) {
+      debugPrint('Error fetching app version: $e');
+      if (mounted) {
+        setState(() {
+          _appVersion = 'Unknown';
+        });
+      }
+    }
   }
 
   Future<void> _addShortcut() async {
@@ -350,11 +376,25 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('Building ShortcutListScreen - appVersion: $_appVersion');
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WebKiosk Builder'),
+        title: Column(
+          children: [
+            const Text('WebKiosk Builder'),
+            Text(
+              _appVersion.isNotEmpty ? 'Version $_appVersion' : 'Loading version...',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white70,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
         centerTitle: true,
         elevation: 0,
+        backgroundColor: Colors.blue,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

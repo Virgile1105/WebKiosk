@@ -158,7 +158,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl');
+    debugPrint('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl, launchedFromShortcut: $_launchedFromShortcut');
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: 'WebKiosk Builder',
@@ -167,18 +167,8 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      // If launched from a shortcut with URL, go directly to webview
-      // Otherwise show the shortcut list (only after checking for initial URL)
-      home: !_initialUrlCheckComplete
-        ? Container(color: Colors.transparent)
-        : _initialUrl != null 
-          ? KioskWebViewScreen(
-              initialUrl: _initialUrl!,
-              disableAutoFocus: _disableAutoFocus,
-              useCustomKeyboard: _useCustomKeyboard,
-              disableCopyPaste: _disableCopyPaste,
-            )
-          : const ShortcutListScreen(),
+      // TEMPORARILY FORCE SHOW SHORTCUT LIST FOR TESTING
+      home: const ShortcutListScreen(),
     );
   }
 }
