@@ -35,7 +35,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       shortcuts.add(ShortcutItem(
         id: 'sap_ewm_default',
         name: 'SAP_EWM',
-        url: 'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
+        url: 'https://ewmfortesting.web.app', //  'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
         iconUrl: 'assets/icon/SAP_EWM.png',
         disableAutoFocus: false,
         useCustomKeyboard: true,

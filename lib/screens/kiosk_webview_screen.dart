@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:typed_data';
+import 'package:audioplayers/audioplayers.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
@@ -47,6 +48,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   bool _keyboardHasBeenPositioned = false; // Track if keyboard has been positioned at least once
   double _keyboardScale = 0.8; // Scaling factor for keyboard size
   String _appVersion = '';
+  late AudioPlayer _audioPlayer;
 
   @override
   void didChangeDependencies() {
@@ -111,7 +113,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
 
   @override
   void initState() {
-    super.initState(); 
+    super.initState();
+    _audioPlayer = AudioPlayer();
     _initializeWebView();
     _loadCustomSettings(); // Fire-and-forget async loading
     _loadAppVersion(); // Load app version
@@ -241,6 +244,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           debugPrint('WebView Debug: ${message.message}');
         },
       )
+      ..addJavaScriptChannel(
+        'playWarningSound',
+        onMessageReceived: (JavaScriptMessage message) {
+          debugPrint('Warning sound triggered: ${message.message}');
+          _playWarningSound();
+        },
+      )
       // Load blank page first, then actual URL
       ..loadHtmlString('<html><head><style>body { background: white; margin: 0; }</style></head><body></body></html>')
       ..setNavigationDelegate(
@@ -261,8 +271,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 },
               );
             } else {
-              // Actual page finished loading
-              if (!mounted) return;
+              // Actual page finished loadingrun              if (!mounted) return;
               setState(() {
                 _isLoading = false;
               });
@@ -271,11 +280,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               if (widget.disableAutoFocus) {
                 _preventAutoFocus();
               }
-              // Set up custom keyboard if enabled (independent of autofocus)
+              // Set up custom keyboard after page loads
               if (widget.useCustomKeyboard) {
                 _setupCustomKeyboard();
               }
-              // Note: Copy/paste disabling is now handled in _setupCustomKeyboard()
             }
           },
           onPageStarted: (String url) {
@@ -317,6 +325,30 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         elem.removeAttribute('autofocus');
       });
     ''');
+  }
+
+  void _playWarningSound() async {
+    try {
+      await _audioPlayer.setVolume(1.0); // Max volume
+      await _audioPlayer.setSource(AssetSource('sounds/warning.mp3'));
+      
+      // Play first time
+      await _audioPlayer.resume();
+      
+      // Wait for the sound to finish (assuming ~2-3 seconds, adjust as needed)
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // Stop the player
+      await _audioPlayer.stop();
+      
+      // Play second time
+      await _audioPlayer.setSource(AssetSource('sounds/warning.mp3'));
+      await _audioPlayer.resume();
+    } catch (e) {
+      debugPrint('Error playing warning sound: $e');
+      // Fallback: try to play a system sound or vibrate
+      // For now, just log the error
+    }
   }
 
   /// Disables copy, paste, and cut operations on input fields
@@ -749,6 +781,57 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
 
           // No need to blur or remove autofocus here, handled separately
         }
+
+        // Add focusin listener to blur fields with MobileEditDisabled class
+        document.addEventListener('focusin', function(e) {
+          if (e.target.classList.contains('MobileEditDisabled')) {
+            e.target.blur();
+          }
+        });
+
+        // Immediately disable any MobileEditDisabled fields to prevent focus
+        document.querySelectorAll('.MobileEditDisabled').forEach(function(el) {
+          el.disabled = true;
+        });
+
+        // Monitor for specific field value to trigger warning sound
+        function checkForWarningValue() {
+          const inputs = document.querySelectorAll('input, textarea, select');
+          for (let input of inputs) {
+            if (input.value === "Le UM scanné provient d'un transport") {
+              if (!window.warningSoundPlayed) {
+                window.warningSoundPlayed = true;
+                playWarningSound.postMessage('Warning value detected');
+              }
+              break;
+            }
+          }
+        }
+
+        // Check immediately
+        checkForWarningValue();
+
+        // Add listeners to all inputs
+        document.addEventListener('input', checkForWarningValue);
+        document.addEventListener('change', checkForWarningValue);
+
+        // Also use MutationObserver for dynamic content
+        const observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList') {
+              mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                  const inputs = node.querySelectorAll ? node.querySelectorAll('input, textarea, select') : [];
+                  inputs.forEach(function(input) {
+                    input.addEventListener('input', checkForWarningValue);
+                    input.addEventListener('change', checkForWarningValue);
+                  });
+                }
+              });
+            }
+          });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
 
         console.log('Custom keyboard JavaScript injected');
       })();
@@ -3314,6 +3397,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     // Clean up WebView controller
     _controller.clearCache();
     _controller.clearLocalStorage();
+    _audioPlayer.dispose();
     super.dispose();
   }
 }
