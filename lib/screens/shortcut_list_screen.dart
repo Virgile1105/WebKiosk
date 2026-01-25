@@ -28,8 +28,25 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   Future<void> _loadShortcuts() async {
     final prefs = await SharedPreferences.getInstance();
     final shortcutsJson = prefs.getString('shortcuts') ?? '';
+    final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+    
+    // Add default SAP_EWM shortcut if no shortcuts exist
+    if (shortcuts.isEmpty) {
+      shortcuts.add(ShortcutItem(
+        id: 'sap_ewm_default',
+        name: 'SAP_EWM',
+        url: 'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
+        iconUrl: 'assets/icon/SAP_EWM.png',
+        disableAutoFocus: false,
+        useCustomKeyboard: true,
+        disableCopyPaste: false,
+      ));
+      // Save the default shortcut
+      await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+    }
+    
     setState(() {
-      _shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      _shortcuts = shortcuts;
       _isLoading = false;
     });
   }
@@ -69,6 +86,13 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     bool disableAutoFocus = false;
     bool useCustomKeyboard = false;
     bool disableCopyPaste = false;
+    String selectedAssetIcon = '';
+
+    // Available asset icons
+    final List<String> availableAssetIcons = [
+      '', // Empty option for URL input
+      'assets/icon/SAP_EWM.png',
+    ];
 
     final result = await showDialog<bool>(
       context: context,
@@ -98,19 +122,46 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                   keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedAssetIcon,
+                  decoration: const InputDecoration(
+                    labelText: 'Icon',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: availableAssetIcons.map((icon) {
+                    return DropdownMenuItem<String>(
+                      value: icon,
+                      child: Text(icon.isEmpty ? 'Use URL (below)' : icon.replaceFirst('assets/icon/', '')),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedAssetIcon = value ?? '';
+                      if (selectedAssetIcon.isNotEmpty) {
+                        iconUrlController.clear(); // Clear URL field when asset is selected
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: iconUrlController,
-                  decoration: const InputDecoration(
+                  enabled: selectedAssetIcon.isEmpty, // Disable when asset icon is selected
+                  decoration: InputDecoration(
                     labelText: 'Icon URL (optional)',
-                    hintText: 'Leave empty for auto-detect',
-                    border: OutlineInputBorder(),
+                    hintText: selectedAssetIcon.isNotEmpty ? 'Using asset icon' : 'Leave empty for auto-detect',
+                    border: const OutlineInputBorder(),
+                    filled: selectedAssetIcon.isNotEmpty,
+                    fillColor: selectedAssetIcon.isNotEmpty ? Colors.grey.shade100 : null,
                   ),
                   keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Tip: Leave icon URL empty to use the site\'s favicon automatically.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                Text(
+                  selectedAssetIcon.isNotEmpty
+                      ? 'Using selected asset icon.'
+                      : 'Leave icon URL empty to use the site\'s favicon automatically.',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
@@ -189,13 +240,18 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         url = 'https://$url';
       }
 
-      // Auto-generate icon URL if not provided
-      if (iconUrl.isEmpty) {
-        try {
-          final uri = Uri.parse(url);
-          iconUrl = 'https://www.google.com/s2/favicons?domain=${uri.host}&sz=128';
-        } catch (e) {
-          iconUrl = 'https://www.google.com/s2/favicons?domain=$url&sz=128';
+      // Determine final icon URL
+      var finalIconUrl = selectedAssetIcon;
+      if (finalIconUrl.isEmpty) {
+        finalIconUrl = iconUrlController.text.trim();
+        // Auto-generate icon URL if not provided
+        if (finalIconUrl.isEmpty) {
+          try {
+            final uri = Uri.parse(url);
+            finalIconUrl = 'https://www.google.com/s2/favicons?domain=${uri.host}&sz=128';
+          } catch (e) {
+            finalIconUrl = 'https://www.google.com/s2/favicons?domain=$url&sz=128';
+          }
         }
       }
 
@@ -204,7 +260,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: name,
         url: url,
-        iconUrl: iconUrl,
+        iconUrl: finalIconUrl,
         disableAutoFocus: disableAutoFocus,
         useCustomKeyboard: useCustomKeyboard,
         disableCopyPaste: disableCopyPaste,
@@ -229,11 +285,24 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
   Future<void> _createHomeScreenShortcut(ShortcutItem shortcut) async {
     try {
+      // Load asset icon bytes if it's an asset path
+      Uint8List? iconBytes;
+      if (shortcut.iconUrl.startsWith('assets/')) {
+        try {
+          final ByteData data = await rootBundle.load(shortcut.iconUrl);
+          iconBytes = data.buffer.asUint8List();
+        } catch (e) {
+          debugPrint('Failed to load asset icon: $e');
+          // Continue without icon bytes - Android will use default icon
+        }
+      }
+
       await platform.invokeMethod('createShortcut', {
         'shortcutId': 'webkiosk_${shortcut.id}',
         'name': shortcut.name,
         'url': shortcut.url,
         'iconUrl': shortcut.iconUrl,
+        'iconBytes': iconBytes,
         'disableAutoFocus': shortcut.disableAutoFocus,
         'useCustomKeyboard': shortcut.useCustomKeyboard,
         'disableCopyPaste': shortcut.disableCopyPaste,
@@ -336,14 +405,15 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
               leading: const Icon(Icons.add_to_home_screen),
               title: const Text('Add to Home Screen'),
               subtitle: const Text('Create another home screen shortcut'),
-              onTap: () async {
+              onTap: () {
                 Navigator.pop(context);
-                await _createHomeScreenShortcut(shortcut);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Home screen shortcut created!')),
-                  );
-                }
+                _createHomeScreenShortcut(shortcut).then((_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Home screen shortcut created!')),
+                    );
+                  }
+                });
               },
             ),
             ListTile(
@@ -369,6 +439,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           disableAutoFocus: shortcut.disableAutoFocus,
           useCustomKeyboard: shortcut.useCustomKeyboard,
           disableCopyPaste: shortcut.disableCopyPaste,
+          shortcutIconUrl: shortcut.iconUrl,
         ),
       ),
     );
@@ -488,29 +559,41 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  shortcut.iconUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Icon(
-                      Icons.language,
-                      size: 40,
-                      color: Colors.grey[600],
-                    );
-                  },
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
+                child: shortcut.iconUrl.startsWith('assets/')
+                    ? Image.asset(
+                        shortcut.iconUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.language,
+                            size: 40,
+                            color: Colors.grey[600],
+                          );
+                        },
+                      )
+                    : Image.network(
+                        shortcut.iconUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            Icons.language,
+                            size: 40,
+                            color: Colors.grey[600],
+                          );
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ),
             const SizedBox(height: 8),

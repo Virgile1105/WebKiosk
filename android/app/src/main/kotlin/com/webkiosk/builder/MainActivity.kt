@@ -18,6 +18,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.min
 import kotlinx.coroutines.*
 
 class MainActivity : FlutterActivity() {
@@ -39,16 +40,17 @@ class MainActivity : FlutterActivity() {
                     val name = call.argument<String>("name") ?: "WebKiosk"
                     val url = call.argument<String>("url") ?: ""
                     val iconUrl = call.argument<String>("iconUrl") ?: ""
+                    val iconBytes = call.argument<ByteArray>("iconBytes")
                     val disableAutoFocus = call.argument<Boolean>("disableAutoFocus") ?: false
                     val useCustomKeyboard = call.argument<Boolean>("useCustomKeyboard") ?: false
                     val disableCopyPaste = call.argument<Boolean>("disableCopyPaste") ?: false
                     val noIcon = call.argument<Boolean>("noIcon") ?: false
                     
-                    Log.d(TAG, "Creating shortcut: id=$shortcutId, name=$name, url=$url, iconUrl=$iconUrl, disableAutoFocus=$disableAutoFocus, useCustomKeyboard=$useCustomKeyboard, disableCopyPaste=$disableCopyPaste, noIcon=$noIcon")
+                    Log.d(TAG, "Creating shortcut: id=$shortcutId, name=$name, url=$url, iconUrl=$iconUrl, iconBytes=${iconBytes?.size ?: 0} bytes, disableAutoFocus=$disableAutoFocus, useCustomKeyboard=$useCustomKeyboard, disableCopyPaste=$disableCopyPaste, noIcon=$noIcon")
                     
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
-                            createShortcut(shortcutId, name, url, iconUrl, disableAutoFocus, useCustomKeyboard, disableCopyPaste, noIcon)
+                            createShortcut(shortcutId, name, url, iconUrl, iconBytes, disableAutoFocus, useCustomKeyboard, disableCopyPaste, noIcon)
                             result.success(true)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error creating shortcut", e)
@@ -124,6 +126,7 @@ class MainActivity : FlutterActivity() {
                     val name = call.argument<String>("name") ?: "WebKiosk"
                     val url = call.argument<String>("url") ?: ""
                     val iconUrl = call.argument<String>("iconUrl") ?: ""
+                    val iconBytes = call.argument<ByteArray>("iconBytes")
                     val disableAutoFocus = call.argument<Boolean>("disableAutoFocus") ?: false
                     val useCustomKeyboard = call.argument<Boolean>("useCustomKeyboard") ?: false
                     val disableCopyPaste = call.argument<Boolean>("disableCopyPaste") ?: false
@@ -133,7 +136,7 @@ class MainActivity : FlutterActivity() {
                     
                     CoroutineScope(Dispatchers.Main).launch {
                         try {
-                            val updated = updateShortcut(shortcutId, name, url, iconUrl, disableAutoFocus, useCustomKeyboard, disableCopyPaste, noIcon)
+                            val updated = updateShortcut(shortcutId, name, url, iconUrl, iconBytes, disableAutoFocus, useCustomKeyboard, disableCopyPaste, noIcon)
                             result.success(updated)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error updating shortcut", e)
@@ -249,7 +252,7 @@ class MainActivity : FlutterActivity() {
         Log.d(TAG, "Reset to default icon")
     }
 
-    private suspend fun createShortcut(shortcutId: String, name: String, url: String, iconUrlString: String, disableAutoFocus: Boolean, useCustomKeyboard: Boolean, disableCopyPaste: Boolean, noIcon: Boolean) = withContext(Dispatchers.IO) {
+    private suspend fun createShortcut(shortcutId: String, name: String, url: String, iconUrlString: String, iconBytes: ByteArray?, disableAutoFocus: Boolean, useCustomKeyboard: Boolean, disableCopyPaste: Boolean, noIcon: Boolean) = withContext(Dispatchers.IO) {
         // Create a proper app-like intent with URI data for shortcuts
         val launchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("webkiosk://open?url=${Uri.encode(url)}&disableAutoFocus=$disableAutoFocus&useCustomKeyboard=$useCustomKeyboard&disableCopyPaste=$disableCopyPaste")).apply {
             setPackage(context.packageName)
@@ -259,23 +262,114 @@ class MainActivity : FlutterActivity() {
 
         var icon: IconCompat? = null
         
-        // Try to download icon from URL (unless noIcon is true)
+        // Handle asset icons vs URL icons
         if (iconUrlString.isNotEmpty() && !noIcon) {
-            try {
-                Log.d(TAG, "Attempting to download icon from: $iconUrlString")
-                val iconBitmap = downloadIcon(iconUrlString)
-                if (iconBitmap != null) {
-                    Log.d(TAG, "Icon downloaded successfully: ${iconBitmap.width}x${iconBitmap.height}")
-                    // Scale the bitmap to a proper icon size
-                    val scaledBitmap = scaleBitmap(iconBitmap, 192, 192)
-                    // Use bitmap directly for better compatibility
-                    icon = IconCompat.createWithBitmap(scaledBitmap)
-                    Log.d(TAG, "Bitmap icon created successfully")
-                } else {
-                    Log.e(TAG, "Downloaded bitmap is null")
+            if (iconBytes != null) {
+                // Use icon bytes passed from Flutter
+                try {
+                    Log.d(TAG, "Using icon bytes from Flutter: ${iconBytes.size} bytes")
+                    val bitmap = BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size)
+                    if (bitmap != null) {
+                        Log.d(TAG, "Icon bytes decoded successfully: ${bitmap.width}x${bitmap.height}")
+                        val scaledBitmap = scaleBitmap(bitmap, 192, 192)
+                        icon = IconCompat.createWithBitmap(scaledBitmap)
+                        Log.d(TAG, "Icon created from bytes successfully")
+                    } else {
+                        Log.e(TAG, "Failed to decode bitmap from bytes")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error creating icon from bytes", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error downloading icon", e)
+            } else if (iconUrlString.startsWith("assets/")) {
+                // Fallback: try to load from assets (though this won't work for Flutter assets)
+                try {
+                    Log.d(TAG, "Loading icon from assets: $iconUrlString")
+                    val assetPath = iconUrlString.substring(7) // Remove "assets/" prefix
+                    Log.d(TAG, "Asset path after removing prefix: $assetPath")
+                    
+                    // Try different possible asset paths
+                    val possibleAssetPaths = listOf(
+                        assetPath, // icon/SAP_EWM.png
+                        "flutter_assets/$iconUrlString", // flutter_assets/assets/icon/SAP_EWM.png
+                        "flutter_assets/assets/$assetPath" // flutter_assets/assets/icon/SAP_EWM.png
+                    )
+                    
+                    var inputStream: java.io.InputStream? = null
+                    var foundPath: String? = null
+                    
+                    for (path in possibleAssetPaths) {
+                        try {
+                            inputStream = context.assets.open(path)
+                            foundPath = path
+                            Log.d(TAG, "Successfully opened asset at: $path")
+                            break
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Asset not found at: $path")
+                        }
+                    }
+                    
+                    if (inputStream != null && foundPath != null) {
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        inputStream.close()
+                        
+                        if (bitmap != null) {
+                            Log.d(TAG, "Asset icon loaded successfully from $foundPath: ${bitmap.width}x${bitmap.height}")
+                            val scaledBitmap = scaleBitmap(bitmap, 192, 192)
+                            icon = IconCompat.createWithBitmap(scaledBitmap)
+                            Log.d(TAG, "Asset bitmap icon created successfully")
+                        } else {
+                            Log.e(TAG, "Failed to decode asset bitmap - bitmap is null")
+                        }
+                    } else {
+                        Log.e(TAG, "Could not find asset at any of the attempted paths")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading asset icon", e)
+                    Log.e(TAG, "Asset path was: ${iconUrlString.substring(7)}")
+                    // List available assets for debugging
+                    try {
+                        val assetList = context.assets.list("")
+                        Log.d(TAG, "Available assets in root: ${assetList?.joinToString()}")
+                        val iconAssets = context.assets.list("icon")
+                        Log.d(TAG, "Available assets in icon folder: ${iconAssets?.joinToString()}")
+                        // Check flutter_assets directory
+                        val flutterAssets = context.assets.list("flutter_assets")
+                        Log.d(TAG, "Available assets in flutter_assets: ${flutterAssets?.joinToString()}")
+                        val flutterAssetsIcon = context.assets.list("flutter_assets/assets/icon")
+                        Log.d(TAG, "Available assets in flutter_assets/assets/icon: ${flutterAssetsIcon?.joinToString()}")
+                        // Try different possible paths
+                        val possiblePaths = listOf("icon/SAP_EWM.png", "assets/icon/SAP_EWM.png", "SAP_EWM.png", "flutter_assets/assets/icon/SAP_EWM.png")
+                        for (path in possiblePaths) {
+                            try {
+                                val testStream = context.assets.open(path)
+                                testStream.close()
+                                Log.d(TAG, "Found asset at path: $path")
+                            } catch (testE: Exception) {
+                                Log.d(TAG, "Asset not found at path: $path")
+                            }
+                        }
+                    } catch (listEx: Exception) {
+                        Log.e(TAG, "Error listing assets", listEx)
+                    }
+                }
+            } else {
+                // Try to download icon from URL
+                try {
+                    Log.d(TAG, "Attempting to download icon from: $iconUrlString")
+                    val iconBitmap = downloadIcon(iconUrlString)
+                    if (iconBitmap != null) {
+                        Log.d(TAG, "Icon downloaded successfully: ${iconBitmap.width}x${iconBitmap.height}")
+                        // Scale the bitmap to a proper icon size
+                        val scaledBitmap = scaleBitmap(iconBitmap, 192, 192)
+                        // Use bitmap directly for better compatibility
+                        icon = IconCompat.createWithBitmap(scaledBitmap)
+                        Log.d(TAG, "Bitmap icon created successfully")
+                    } else {
+                        Log.e(TAG, "Downloaded bitmap is null")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error downloading icon", e)
+                }
             }
         }
         
@@ -309,7 +403,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private suspend fun updateShortcut(shortcutId: String, name: String, url: String, iconUrlString: String, disableAutoFocus: Boolean, useCustomKeyboard: Boolean, disableCopyPaste: Boolean, noIcon: Boolean): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun updateShortcut(shortcutId: String, name: String, url: String, iconUrlString: String, iconBytes: ByteArray?, disableAutoFocus: Boolean, useCustomKeyboard: Boolean, disableCopyPaste: Boolean, noIcon: Boolean): Boolean = withContext(Dispatchers.IO) {
         // Create updated intent
         val launchIntent = Intent().apply {
             action = Intent.ACTION_MAIN
@@ -325,16 +419,52 @@ class MainActivity : FlutterActivity() {
 
         var icon: IconCompat? = null
         
-        // Try to download icon
+        // Handle asset icons vs URL icons for update
         if (iconUrlString.isNotEmpty() && !noIcon) {
-            try {
-                val iconBitmap = downloadIcon(iconUrlString)
-                if (iconBitmap != null) {
-                    val scaledBitmap = scaleBitmap(iconBitmap, 192, 192)
-                    icon = IconCompat.createWithBitmap(scaledBitmap)
+            if (iconBytes != null) {
+                // Use icon bytes passed from Flutter
+                try {
+                    Log.d(TAG, "Using icon bytes from Flutter for update: ${iconBytes.size} bytes")
+                    val bitmap = BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size)
+                    if (bitmap != null) {
+                        Log.d(TAG, "Icon bytes decoded successfully for update: ${bitmap.width}x${bitmap.height}")
+                        val scaledBitmap = scaleBitmap(bitmap, 192, 192)
+                        icon = IconCompat.createWithBitmap(scaledBitmap)
+                        Log.d(TAG, "Icon created from bytes successfully for update")
+                    } else {
+                        Log.e(TAG, "Failed to decode bitmap from bytes for update")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error creating icon from bytes for update", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error downloading icon for update", e)
+            } else if (iconUrlString.startsWith("assets/")) {
+                // Fallback: try to load from assets (though this won't work for Flutter assets)
+                try {
+                    Log.d(TAG, "Loading icon from assets for update: $iconUrlString")
+                    val assetPath = iconUrlString.substring(7) // Remove "assets/" prefix
+                    val assetManager = context.assets
+                    val inputStream = assetManager.open(assetPath)
+                    val bitmap = BitmapFactory.decodeStream(inputStream)
+                    inputStream.close()
+                    
+                    if (bitmap != null) {
+                        val scaledBitmap = scaleBitmap(bitmap, 192, 192)
+                        icon = IconCompat.createWithBitmap(scaledBitmap)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading asset icon for update", e)
+                }
+            } else {
+                // Try to download icon
+                try {
+                    val iconBitmap = downloadIcon(iconUrlString)
+                    if (iconBitmap != null) {
+                        val scaledBitmap = scaleBitmap(iconBitmap, 192, 192)
+                        icon = IconCompat.createWithBitmap(scaledBitmap)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error downloading icon for update", e)
+                }
             }
         }
         
@@ -411,7 +541,33 @@ class MainActivity : FlutterActivity() {
         }
     }
     
-    private fun scaleBitmap(bitmap: Bitmap, width: Int, height: Int): Bitmap {
-        return Bitmap.createScaledBitmap(bitmap, width, height, true)
+    private fun scaleBitmap(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+
+        // Calculate scale factor to fit within target dimensions while maintaining aspect ratio
+        val scaleFactor = min(targetWidth.toFloat() / originalWidth, targetHeight.toFloat() / originalHeight)
+
+        val scaledWidth = (originalWidth * scaleFactor).toInt()
+        val scaledHeight = (originalHeight * scaleFactor).toInt()
+
+        // Create scaled bitmap
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+
+        // If we need a square icon, create a square canvas and center the scaled image
+        if (targetWidth == targetHeight) {
+            val squareBitmap = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(squareBitmap)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+            // Center the scaled image on the square canvas
+            val xOffset = (targetWidth - scaledWidth) / 2f
+            val yOffset = (targetHeight - scaledHeight) / 2f
+
+            canvas.drawBitmap(scaledBitmap, xOffset, yOffset, paint)
+            return squareBitmap
+        }
+
+        return scaledBitmap
     }
 }

@@ -6,12 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'dart:typed_data';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
   final bool disableAutoFocus;
   final bool useCustomKeyboard;
   final bool disableCopyPaste;
+  final String? shortcutIconUrl;
 
   const KioskWebViewScreen({
     super.key,
@@ -19,6 +21,7 @@ class KioskWebViewScreen extends StatefulWidget {
     this.disableAutoFocus = false,
     this.useCustomKeyboard = false,
     this.disableCopyPaste = false,
+    this.shortcutIconUrl,
   });
 
   @override
@@ -119,7 +122,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     if (mounted) {
       setState(() {
         _customAppName = prefs.getString('custom_app_name') ?? '';
-        _customIconUrl = prefs.getString('custom_icon_url') ?? '';
+        _customIconUrl = widget.shortcutIconUrl ?? prefs.getString('custom_icon_url') ?? '';
 
         // Load saved expanded keyboard position
         final keyboardX = prefs.getDouble('keyboard_position_x');
@@ -878,26 +881,47 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 ),
                 child: _faviconUrl.isNotEmpty
                     ? ClipOval(
-                        child: Image.network(
-                          _faviconUrl,
-                          width: 64,
-                          height: 64,
-                          errorBuilder: (context, error, stackTrace) {
-                            // Clear the favicon URL to prevent repeated errors
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted) {
-                                setState(() {
-                                  _faviconUrl = '';
-                                });
-                              }
-                            });
-                            return const Icon(
-                              Icons.language,
-                              size: 50,
-                              color: Colors.blue,
-                            );
-                          },
-                        ),
+                        child: _faviconUrl.startsWith('assets/')
+                            ? Image.asset(
+                                _faviconUrl,
+                                width: 64,
+                                height: 64,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // Clear the favicon URL to prevent repeated errors
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _faviconUrl = '';
+                                      });
+                                    }
+                                  });
+                                  return const Icon(
+                                    Icons.language,
+                                    size: 50,
+                                    color: Colors.blue,
+                                  );
+                                },
+                              )
+                            : Image.network(
+                                _faviconUrl,
+                                width: 64,
+                                height: 64,
+                                errorBuilder: (context, error, stackTrace) {
+                                  // Clear the favicon URL to prevent repeated errors
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _faviconUrl = '';
+                                      });
+                                    }
+                                  });
+                                  return const Icon(
+                                    Icons.language,
+                                    size: 50,
+                                    color: Colors.blue,
+                                  );
+                                },
+                              ),
                       )
                     : const Icon(
                         Icons.language,
@@ -1561,10 +1585,23 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     }
     
     try {
+      // Load asset icon if it's an asset path
+      Uint8List? iconBytes;
+      if (iconUrl.startsWith('assets/')) {
+        try {
+          final ByteData data = await rootBundle.load(iconUrl);
+          iconBytes = data.buffer.asUint8List();
+        } catch (e) {
+          print('Failed to load asset icon: $e');
+          // Continue without icon bytes - Android will use default icon
+        }
+      }
+      
       await platform.invokeMethod('createShortcut', {
         'name': name,
         'url': url,
         'iconUrl': iconUrl,
+        'iconBytes': iconBytes,
         'disableAutoFocus': disableAutoFocus,
         'useCustomKeyboard': useCustomKeyboard,
         'disableCopyPaste': disableCopyPaste,
