@@ -45,39 +45,91 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
   Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
+  Offset? _savedNumericKeyboardPosition; // Saved position for numeric keyboard mode
   bool _keyboardHasBeenPositioned = false; // Track if keyboard has been positioned at least once
   double _keyboardScale = 0.8; // Scaling factor for keyboard size
   String _appVersion = '';
+  Orientation? _previousOrientation; // Track previous orientation for reset on rotation
   late AudioPlayer _audioPlayer;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final screenSize = MediaQuery.of(context).size;
+    final currentOrientation = MediaQuery.of(context).orientation;
     
-    // Always clamp keyboard position to current screen bounds
-    // Use maximum keyboard width to ensure it fits in both normal and expanded modes
-    final keyboardWidth = 876.0 * _keyboardScale; // Maximum width (expanded mode)
-    final keyboardHeight = 352.0 * _keyboardScale;
-    final maxKeyboardX = screenSize.width - keyboardWidth - 20.0;
-    final maxKeyboardY = screenSize.height - keyboardHeight - 20.0;
-    
-    // If position is still the temporary default and keyboard hasn't been positioned yet, set to bottom-right
-    // Use normal keyboard width for default positioning since keyboard starts in normal mode
-    if (_keyboardPosition == const Offset(100, 200) && !_keyboardHasBeenPositioned) {
-      final defaultKeyboardWidth = 240.0 * _keyboardScale; // Normal mode width
+    // Check if orientation changed, and reset keyboard to bottom right if so
+    if (_previousOrientation != null && _previousOrientation != currentOrientation) {
+      // Orientation changed, reset to bottom right
+      final keyboardWidth = (_isExpandedMode ? 876.0 : 240.0) * _keyboardScale;
+      final keyboardHeight = 352.0 * _keyboardScale;
       _keyboardPosition = Offset(
-        screenSize.width - defaultKeyboardWidth - 20,  // Bottom-right x
-        screenSize.height - keyboardHeight - 20, // Bottom-right y
+        screenSize.width - keyboardWidth - 20.0, // Bottom right x
+        screenSize.height - keyboardHeight - 20.0, // Bottom right y
       );
+      _keyboardHasBeenPositioned = true; // Ensure it's marked as positioned
+      
+      // Also reset minimized icon to bottom right
+      final iconSize = 60.0 * _keyboardScale;
+      _minimizedIconPosition = Offset(
+        screenSize.width - iconSize - 10.0, // Bottom right x for icon
+        screenSize.height - iconSize - 10.0, // Bottom right y for icon
+      );
+    }
+    _previousOrientation = currentOrientation;
+    
+    // Set initial keyboard position if not yet positioned
+    if (!_keyboardHasBeenPositioned) {
+      if (_isExpandedMode) {
+        if (_savedExpandedKeyboardPosition != null) {
+          // Load saved expanded position and clamp to screen bounds
+          final keyboardWidth = 876.0 * _keyboardScale;
+          final keyboardHeight = 352.0 * _keyboardScale;
+          final maxX = screenSize.width - keyboardWidth - 20.0;
+          final maxY = screenSize.height - keyboardHeight - 20.0;
+          final clampedX = _savedExpandedKeyboardPosition!.dx.clamp(20.0, maxX);
+          final clampedY = _savedExpandedKeyboardPosition!.dy.clamp(20.0, maxY);
+          _keyboardPosition = Offset(clampedX, clampedY);
+        } else {
+          // Default to center at bottom for expanded mode
+          final keyboardWidth = 876.0 * _keyboardScale;
+          final keyboardHeight = 352.0 * _keyboardScale;
+          _keyboardPosition = Offset(
+            (screenSize.width - keyboardWidth) / 2,
+            screenSize.height - keyboardHeight - 20,
+          );
+        }
+      } else {
+        if (_savedNumericKeyboardPosition != null) {
+          // Load saved numeric position and clamp to screen bounds
+          final keyboardWidth = 240.0 * _keyboardScale;
+          final keyboardHeight = 352.0 * _keyboardScale;
+          final maxX = screenSize.width - keyboardWidth - 20.0;
+          final maxY = screenSize.height - keyboardHeight - 20.0;
+          final clampedX = _savedNumericKeyboardPosition!.dx.clamp(20.0, maxX);
+          final clampedY = _savedNumericKeyboardPosition!.dy.clamp(20.0, maxY);
+          _keyboardPosition = Offset(clampedX, clampedY);
+        } else {
+          // Default to bottom-right for numeric mode
+          final keyboardWidth = 240.0 * _keyboardScale;
+          final keyboardHeight = 352.0 * _keyboardScale;
+          _keyboardPosition = Offset(
+            screenSize.width - keyboardWidth - 20,
+            screenSize.height - keyboardHeight - 20,
+          );
+        }
+      }
       _keyboardHasBeenPositioned = true;
-    } else if (_keyboardPosition != const Offset(100, 200)) {
-      // Clamp existing position to new screen bounds (only if it's not the temporary default)
-      // Ensure clamp range is valid (min <= max)
+    } else {
+      // Clamp existing position to current screen bounds
+      final keyboardWidth = (_isExpandedMode ? 876.0 : 240.0) * _keyboardScale;
+      final keyboardHeight = 352.0 * _keyboardScale;
       final minX = 20.0;
       final minY = 20.0;
-      final validMaxX = maxKeyboardX > minX ? maxKeyboardX : minX;
-      final validMaxY = maxKeyboardY > minY ? maxKeyboardY : minY;
+      final maxX = screenSize.width - keyboardWidth - 20.0;
+      final maxY = screenSize.height - keyboardHeight - 20.0;
+      final validMaxX = maxX > minX ? maxX : minX;
+      final validMaxY = maxY > minY ? maxY : minY;
       
       _keyboardPosition = Offset(
         _keyboardPosition.dx.clamp(minX, validMaxX),
@@ -118,6 +170,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     _initializeWebView();
     _loadCustomSettings(); // Fire-and-forget async loading
     _loadAppVersion(); // Load app version
+    _keyboardMinimized = true; // Show keyboard shortcut by default
   }
 
   Future<void> _loadCustomSettings() async {
@@ -135,15 +188,20 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
         }
 
+        // Load saved numeric keyboard position
+        final numericX = prefs.getDouble('numeric_keyboard_position_x');
+        final numericY = prefs.getDouble('numeric_keyboard_position_y');
+        if (numericX != null && numericY != null) {
+          _savedNumericKeyboardPosition = Offset(numericX, numericY);
+          _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
+        }
+
         // Load minimized icon position only (not keyboard position for numeric mode)
         final iconX = prefs.getDouble('minimized_icon_position_x');
         final iconY = prefs.getDouble('minimized_icon_position_y');
         if (iconX != null && iconY != null) {
           _minimizedIconPosition = Offset(iconX, iconY);
         }
-
-        // For numeric keyboard, always start at bottom-right (don't load saved position)
-        // Expanded keyboard position will be loaded when switching modes
       });
     }
   }
@@ -198,12 +256,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   }
 
   Future<void> _saveKeyboardPosition() async {
-    // Only save keyboard position when in expanded mode
-    // Numeric mode always defaults to bottom-right
+    final prefs = await SharedPreferences.getInstance();
     if (_isExpandedMode) {
-      final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
       await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
+    } else {
+      await prefs.setDouble('numeric_keyboard_position_x', _keyboardPosition.dx);
+      await prefs.setDouble('numeric_keyboard_position_y', _keyboardPosition.dy);
     }
   }
 
@@ -1890,24 +1949,42 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     );
   }
 
+  /// Clamps the minimized icon position to ensure it stays within screen bounds
+  Offset _clampMinimizedIconPosition(Offset position) {
+    final screenSize = MediaQuery.of(context).size;
+    final iconSize = 60.0 * _keyboardScale;
+    
+    final maxX = screenSize.width - iconSize - 10.0;
+    final maxY = screenSize.height - iconSize - 10.0;
+    
+    final minX = 10.0;
+    final minY = 10.0;
+    final validMaxX = maxX > minX ? maxX : minX;
+    final validMaxY = maxY > minY ? maxY : minY;
+    
+    return Offset(
+      position.dx.clamp(minX, validMaxX),
+      position.dy.clamp(minY, validMaxY),
+    );
+  }
+
   /// Custom numeric keyboard widget
   Widget _buildCustomKeyboard() {
     if (_keyboardMinimized) {
+      final clampedPos = _clampMinimizedIconPosition(_minimizedIconPosition);
       return Positioned(
-        left: _minimizedIconPosition.dx,
-        top: _minimizedIconPosition.dy,
+        left: clampedPos.dx,
+        top: clampedPos.dy,
         child: GestureDetector(
           onPanUpdate: (details) {
             setState(() {
-              // Move minimized icon
-              _minimizedIconPosition = Offset(
-                _minimizedIconPosition.dx + details.delta.dx,
-                _minimizedIconPosition.dy + details.delta.dy,
-              );
-              
               // Constrain to screen bounds (ensure icon stays visible)
               final screenSize = MediaQuery.of(context).size;
               final iconSize = 60.0 * _keyboardScale;
+              
+              // Calculate new position with delta
+              final newX = _minimizedIconPosition.dx + details.delta.dx;
+              final newY = _minimizedIconPosition.dy + details.delta.dy;
               
               // Ensure icon doesn't go off screen
               final maxX = screenSize.width - iconSize - 10.0;
@@ -1919,9 +1996,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               final validMaxX = maxX > minIconX ? maxX : minIconX;
               final validMaxY = maxY > minIconY ? maxY : minIconY;
               
+              // Clamp the new position
               _minimizedIconPosition = Offset(
-                _minimizedIconPosition.dx.clamp(minIconX, validMaxX),
-                _minimizedIconPosition.dy.clamp(minIconY, validMaxY),
+                newX.clamp(minIconX, validMaxX),
+                newY.clamp(minIconY, validMaxY),
               );
             });
             // Save minimized icon position to preferences
@@ -1930,6 +2008,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           onTap: () {
             setState(() {
               _keyboardMinimized = false;
+              _showCustomKeyboard = true;
             });
           },
           child: Container(
@@ -3179,14 +3258,23 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       setState(() {
         _isExpandedMode = false;
       });
-      // Always position numeric keyboard at bottom-right (don't load saved position)
-      // Numeric mode always defaults to bottom-right
-      final screenSize = MediaQuery.of(context).size;
-      _keyboardPosition = Offset(
-        screenSize.width - 240.0 * _keyboardScale,
-        screenSize.height - 352.0 * _keyboardScale,
-      );
-      // Don't save position for numeric mode - it always defaults to bottom-right
+      // Load saved numeric keyboard position or default to bottom-right
+      if (_savedNumericKeyboardPosition != null) {
+        final screenSize = MediaQuery.of(context).size;
+        final keyboardWidth = 240.0 * _keyboardScale;
+        final keyboardHeight = 352.0 * _keyboardScale;
+        final maxX = screenSize.width - keyboardWidth - 20.0;
+        final maxY = screenSize.height - keyboardHeight - 20.0;
+        final clampedX = _savedNumericKeyboardPosition!.dx.clamp(20.0, maxX);
+        final clampedY = _savedNumericKeyboardPosition!.dy.clamp(20.0, maxY);
+        _keyboardPosition = Offset(clampedX, clampedY);
+      } else {
+        final screenSize = MediaQuery.of(context).size;
+        _keyboardPosition = Offset(
+          screenSize.width - 240.0 * _keyboardScale - 20,
+          screenSize.height - 352.0 * _keyboardScale - 20,
+        );
+      }
     } else if (key == 'ABC') {
       // Expand to show full keyboard with alphabetic and numeric sections
       setState(() {
