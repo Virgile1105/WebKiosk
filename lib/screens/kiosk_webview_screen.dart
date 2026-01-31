@@ -63,9 +63,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       // Orientation changed, reset to bottom right
       final keyboardWidth = (_isExpandedMode ? 876.0 : 240.0) * _keyboardScale;
       final keyboardHeight = 352.0 * _keyboardScale;
+      final bottomMargin = _isExpandedMode ? 55.0 : 50.0;
       _keyboardPosition = Offset(
         screenSize.width - keyboardWidth - 20.0, // Bottom right x
-        screenSize.height - keyboardHeight - 20.0, // Bottom right y
+        screenSize.height - keyboardHeight - bottomMargin, // Bottom right y
       );
       _keyboardHasBeenPositioned = true; // Ensure it's marked as positioned
       
@@ -73,7 +74,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       final iconSize = 60.0 * _keyboardScale;
       _minimizedIconPosition = Offset(
         screenSize.width - iconSize - 10.0, // Bottom right x for icon
-        screenSize.height - iconSize - 10.0, // Bottom right y for icon
+        screenSize.height - iconSize - 50.0, // Bottom right y for icon
       );
     }
     _previousOrientation = currentOrientation;
@@ -86,7 +87,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           final keyboardWidth = 876.0 * _keyboardScale;
           final keyboardHeight = 352.0 * _keyboardScale;
           final maxX = screenSize.width - keyboardWidth - 20.0;
-          final maxY = screenSize.height - keyboardHeight - 20.0;
+          final maxY = screenSize.height - keyboardHeight - 55.0;
           final clampedX = _savedExpandedKeyboardPosition!.dx.clamp(20.0, maxX);
           final clampedY = _savedExpandedKeyboardPosition!.dy.clamp(20.0, maxY);
           _keyboardPosition = Offset(clampedX, clampedY);
@@ -96,7 +97,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           final keyboardHeight = 352.0 * _keyboardScale;
           _keyboardPosition = Offset(
             (screenSize.width - keyboardWidth) / 2,
-            screenSize.height - keyboardHeight - 20,
+            screenSize.height - keyboardHeight - 55,
           );
         }
       } else {
@@ -105,7 +106,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           final keyboardWidth = 240.0 * _keyboardScale;
           final keyboardHeight = 352.0 * _keyboardScale;
           final maxX = screenSize.width - keyboardWidth - 20.0;
-          final maxY = screenSize.height - keyboardHeight - 20.0;
+          final maxY = screenSize.height - keyboardHeight - 50.0;
           final clampedX = _savedNumericKeyboardPosition!.dx.clamp(20.0, maxX);
           final clampedY = _savedNumericKeyboardPosition!.dy.clamp(20.0, maxY);
           _keyboardPosition = Offset(clampedX, clampedY);
@@ -115,7 +116,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           final keyboardHeight = 352.0 * _keyboardScale;
           _keyboardPosition = Offset(
             screenSize.width - keyboardWidth - 20,
-            screenSize.height - keyboardHeight - 20,
+            screenSize.height - keyboardHeight - 50,
           );
         }
       }
@@ -127,7 +128,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       final minX = 20.0;
       final minY = 20.0;
       final maxX = screenSize.width - keyboardWidth - 20.0;
-      final maxY = screenSize.height - keyboardHeight - 20.0;
+      final bottomMargin = _isExpandedMode ? 55.0 : 50.0;
+      final maxY = screenSize.height - keyboardHeight - bottomMargin;
       final validMaxX = maxX > minX ? maxX : minX;
       final validMaxY = maxY > minY ? maxY : minY;
       
@@ -140,13 +142,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     // Always clamp minimized icon position to current screen bounds
     final iconSize = 60.0 * _keyboardScale;
     final maxIconX = screenSize.width - iconSize - 10.0;
-    final maxIconY = screenSize.height - iconSize - 10.0;
+    final maxIconY = screenSize.height - iconSize - 50.0;
     
     // If minimized icon position is still the temporary default, set to bottom-right
     if (_minimizedIconPosition == const Offset(100, 200)) {
       _minimizedIconPosition = Offset(
         screenSize.width - 80,  // 60px icon + 20px margin from right
-        screenSize.height - 80, // 60px icon + 20px margin from bottom
+        screenSize.height - 110, // 60px icon + 50px margin from bottom
       );
     } else {
       // Clamp existing minimized icon position to new screen bounds
@@ -310,6 +312,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           _playWarningSound();
         },
       )
+      ..addJavaScriptChannel(
+        'playErrorSound',
+        onMessageReceived: (JavaScriptMessage message) {
+          debugPrint('Error sound triggered: ${message.message}');
+          _playErrorSound();
+        },
+      )
       // Load blank page first, then actual URL
       ..loadHtmlString('<html><head><style>body { background: white; margin: 0; }</style></head><body></body></html>')
       ..setNavigationDelegate(
@@ -394,8 +403,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       // Play first time
       await _audioPlayer.resume();
       
-      // Wait for the sound to finish (assuming ~2-3 seconds, adjust as needed)
-      await Future.delayed(const Duration(seconds: 3));
+      // Wait for the sound to finish (assuming ~1 seconds, adjust as needed)
+      await Future.delayed(const Duration(seconds: 1));
       
       // Stop the player
       await _audioPlayer.stop();
@@ -405,6 +414,30 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       await _audioPlayer.resume();
     } catch (e) {
       debugPrint('Error playing warning sound: $e');
+      // Fallback: try to play a system sound or vibrate
+      // For now, just log the error
+    }
+  }
+
+  void _playErrorSound() async {
+    try {
+      await _audioPlayer.setVolume(1.0); // Max volume
+      await _audioPlayer.setSource(AssetSource('sounds/error.mp3'));
+      
+      // Play first time
+      await _audioPlayer.resume();
+      
+      // Wait for the sound to finish (assuming ~1 seconds, adjust as needed)
+     /* await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Stop the player
+      await _audioPlayer.stop();
+      
+      // Play second time
+      await _audioPlayer.setSource(AssetSource('sounds/error.mp3'));
+      await _audioPlayer.resume();*/
+    } catch (e) {
+      debugPrint('Error playing error sound: $e');
       // Fallback: try to play a system sound or vibrate
       // For now, just log the error
     }
@@ -867,12 +900,33 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           }
         }
 
+        // Monitor for error messages starting with "Erreur"
+        function checkForErrorValue() {
+          const inputs = document.querySelectorAll('input, textarea, select');
+          for (let input of inputs) {
+            if (input.value && input.value.startsWith("Erreur")) {
+              if (!window.errorSoundPlayed) {
+                window.errorSoundPlayed = true;
+                // Unfocus all fields
+                document.querySelectorAll('input, textarea, select').forEach(function(el) {
+                  el.blur();
+                });
+                playErrorSound.postMessage('Error value detected');
+              }
+              break;
+            }
+          }
+        }
+
         // Check immediately
         checkForWarningValue();
+        checkForErrorValue();
 
         // Add listeners to all inputs
         document.addEventListener('input', checkForWarningValue);
         document.addEventListener('change', checkForWarningValue);
+        document.addEventListener('input', checkForErrorValue);
+        document.addEventListener('change', checkForErrorValue);
 
         // Also use MutationObserver for dynamic content
         const observer = new MutationObserver(function(mutations) {
@@ -884,6 +938,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   inputs.forEach(function(input) {
                     input.addEventListener('input', checkForWarningValue);
                     input.addEventListener('change', checkForWarningValue);
+                    input.addEventListener('input', checkForErrorValue);
+                    input.addEventListener('change', checkForErrorValue);
                   });
                 }
               });
@@ -2054,7 +2110,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             
             // Ensure keyboard doesn't go off screen
             final maxX = screenSize.width - keyboardWidth - 20.0;
-            final maxY = screenSize.height - keyboardHeight - 20.0;
+            final bottomMargin = _isExpandedMode ? 55.0 : 50.0;
+            final maxY = screenSize.height - keyboardHeight - bottomMargin;
             
             // Ensure clamp range is valid (min <= max)
             final minKeyboardX = 20.0;
@@ -3264,7 +3321,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         final keyboardWidth = 240.0 * _keyboardScale;
         final keyboardHeight = 352.0 * _keyboardScale;
         final maxX = screenSize.width - keyboardWidth - 20.0;
-        final maxY = screenSize.height - keyboardHeight - 20.0;
+        final maxY = screenSize.height - keyboardHeight - 50.0;
         final clampedX = _savedNumericKeyboardPosition!.dx.clamp(20.0, maxX);
         final clampedY = _savedNumericKeyboardPosition!.dy.clamp(20.0, maxY);
         _keyboardPosition = Offset(clampedX, clampedY);
@@ -3272,7 +3329,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         final screenSize = MediaQuery.of(context).size;
         _keyboardPosition = Offset(
           screenSize.width - 240.0 * _keyboardScale - 20,
-          screenSize.height - 352.0 * _keyboardScale - 20,
+          screenSize.height - 352.0 * _keyboardScale - 50,
         );
       }
     } else if (key == 'ABC') {
@@ -3287,7 +3344,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         final keyboardWidth = 876.0 * _keyboardScale;
         final keyboardHeight = 352.0 * _keyboardScale;
         final clampedX = _savedExpandedKeyboardPosition!.dx.clamp(20.0, screenSize.width - keyboardWidth - 20.0);
-        final clampedY = _savedExpandedKeyboardPosition!.dy.clamp(20.0, screenSize.height - keyboardHeight - 20.0);
+        final clampedY = _savedExpandedKeyboardPosition!.dy.clamp(20.0, screenSize.height - keyboardHeight - 55.0);
         _keyboardPosition = Offset(clampedX, clampedY);
       } else {
         // No saved position, center at bottom
