@@ -44,6 +44,24 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         final String? url = call.arguments as String?;
         if (url != null && url.isNotEmpty && url != _initialUrl && _launchedFromShortcut) {
           _navigateToUrl(url);
+        } else if (url == null) {
+          // Main app launch, reset to shortcut list
+          debugPrint('Main app launch detected, resetting to shortcut list');
+          setState(() {
+            _initialUrl = null;
+            _launchedFromShortcut = false;
+          });
+          // Push the shortcut list screen
+          Future.microtask(() {
+            _navigatorKey.currentState?.pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
+              ),
+              (route) => false,
+            );
+          });
         }
       }
     });
@@ -80,11 +98,40 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
           _initialUrlCheckComplete = true;
           _launchedFromShortcut = true;
         });
+        // Push the webview screen
+        Future.microtask(() {
+          _navigatorKey.currentState?.pushAndRemoveUntil(
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => KioskWebViewScreen(
+                initialUrl: _initialUrl!,
+                disableAutoFocus: _disableAutoFocus,
+                useCustomKeyboard: _useCustomKeyboard,
+                disableCopyPaste: _disableCopyPaste,
+                shortcutName: settings['shortcutName'],
+                shortcutIconUrl: settings['shortcutIconUrl'],
+              ),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+            (route) => false,
+          );
+        });
       } else {
         debugPrint('No initial URL found, showing shortcut list');
         setState(() {
           _initialUrlCheckComplete = true;
           _launchedFromShortcut = false;
+        });
+        // Push the shortcut list screen
+        Future.microtask(() {
+          _navigatorKey.currentState?.pushAndRemoveUntil(
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+            (route) => false,
+          );
         });
       }
     } catch (e) {
@@ -93,10 +140,21 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         _initialUrlCheckComplete = true;
         _launchedFromShortcut = false;
       });
+      // Push the shortcut list screen on error
+      Future.microtask(() {
+        _navigatorKey.currentState?.pushAndRemoveUntil(
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+          (route) => false,
+        );
+      });
     }
   }
 
-  Future<Map<String, bool>> _getShortcutSettings(String url) async {
+  Future<Map<String, dynamic>> _getShortcutSettings(String url) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final shortcutsJson = prefs.getString('shortcuts') ?? '';
@@ -109,13 +167,21 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
             'disableAutoFocus': shortcut.disableAutoFocus,
             'useCustomKeyboard': shortcut.useCustomKeyboard,
             'disableCopyPaste': shortcut.disableCopyPaste,
+            'shortcutName': shortcut.name,
+            'shortcutIconUrl': shortcut.iconUrl,
           };
         }
       }
     } catch (e) {
       debugPrint('Error getting shortcut settings: $e');
     }
-    return {'disableAutoFocus': false, 'useCustomKeyboard': false, 'disableCopyPaste': false};
+    return {
+      'disableAutoFocus': false, 
+      'useCustomKeyboard': false, 
+      'disableCopyPaste': false,
+      'shortcutName': null,
+      'shortcutIconUrl': null,
+    };
   }
 
   Future<void> _checkForNewUrl() async {
@@ -144,13 +210,17 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
     
     // Navigate to the new URL with correct settings, clearing all previous routes
     _navigatorKey.currentState?.pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (context) => KioskWebViewScreen(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => KioskWebViewScreen(
           initialUrl: url,
           disableAutoFocus: _disableAutoFocus,
           useCustomKeyboard: _useCustomKeyboard,
           disableCopyPaste: _disableCopyPaste,
+          shortcutName: settings['shortcutName'],
+          shortcutIconUrl: settings['shortcutIconUrl'],
         ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
       (route) => false, // Remove all previous routes
     );
@@ -167,8 +237,13 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         primarySwatch: Colors.blue,
         useMaterial3: true,
       ),
-      // TEMPORARILY FORCE SHOW SHORTCUT LIST FOR TESTING
-      home: const ShortcutListScreen(),
+      home: _initialUrlCheckComplete
+          ? Container() // Screens are pushed via navigator
+          : const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
     );
   }
 }

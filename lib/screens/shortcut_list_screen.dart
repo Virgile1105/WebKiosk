@@ -21,8 +21,19 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   @override
   void initState() {
     super.initState();
-    _loadShortcuts();
-    _loadAppVersion();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadShortcuts(),
+      _loadAppVersion(),
+    ]);
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadShortcuts() async {
@@ -45,10 +56,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
     }
     
-    setState(() {
-      _shortcuts = shortcuts;
-      _isLoading = false;
-    });
+    _shortcuts = shortcuts;
   }
 
   Future<void> _saveShortcuts() async {
@@ -63,19 +71,11 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       debugPrint('PackageInfo loaded - version: ${packageInfo.version}, buildNumber: ${packageInfo.buildNumber}');
       final versionString = '${packageInfo.version}+${packageInfo.buildNumber}';
       debugPrint('Final version string: $versionString');
-      if (mounted) {
-        setState(() {
-          _appVersion = versionString;
-        });
-        debugPrint('App version set to: $_appVersion');
-      }
+      _appVersion = versionString;
+      debugPrint('App version set to: $_appVersion');
     } catch (e) {
       debugPrint('Error fetching app version: $e');
-      if (mounted) {
-        setState(() {
-          _appVersion = 'Unknown';
-        });
-      }
+      _appVersion = 'Unknown';
     }
   }
 
@@ -160,7 +160,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                 Text(
                   selectedAssetIcon.isNotEmpty
                       ? 'Using selected asset icon.'
-                      : 'Leave icon URL empty to use the site\'s favicon automatically.',
+                      : 'Leave icon URL empty to use the site\'s favicon (or default icon if unavailable).',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
@@ -244,7 +244,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       var finalIconUrl = selectedAssetIcon;
       if (finalIconUrl.isEmpty) {
         finalIconUrl = iconUrlController.text.trim();
-        // Auto-generate icon URL if not provided
+        // Try to get website favicon if not provided
         if (finalIconUrl.isEmpty) {
           try {
             final uri = Uri.parse(url);
@@ -440,6 +440,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           useCustomKeyboard: shortcut.useCustomKeyboard,
           disableCopyPaste: shortcut.disableCopyPaste,
           shortcutIconUrl: shortcut.iconUrl,
+          shortcutName: shortcut.name,
         ),
       ),
     );
@@ -535,33 +536,38 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     return GestureDetector(
       onTap: () => _openShortcut(shortcut),
       onLongPress: () => _showShortcutOptions(shortcut),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: shortcut.iconUrl.startsWith('assets/')
-                    ? Image.asset(
-                        shortcut.iconUrl,
+      onHorizontalDragStart: (_) {}, // Prevent horizontal swipe gestures
+      onHorizontalDragUpdate: (_) {}, // Prevent horizontal swipe gestures
+      onHorizontalDragEnd: (_) {}, // Prevent horizontal swipe gestures
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: shortcut.iconUrl.startsWith('assets/')
+                ? Image.asset(
+                    shortcut.iconUrl,
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.language,
+                        size: 40,
+                        color: Colors.grey[600],
+                      );
+                    },
+                  )
+                : Image.network(
+                    shortcut.iconUrl,
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Image.asset(
+                        'assets/icon/default.png',
+                        width: 64,
+                        height: 64,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Icon(
@@ -570,48 +576,41 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                             color: Colors.grey[600],
                           );
                         },
-                      )
-                    : Image.network(
-                        shortcut.iconUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            Icons.language,
-                            size: 40,
-                            color: Colors.grey[600],
-                          );
-                        },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
-                            ),
-                          );
-                        },
-                      ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              shortcut.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                shortcut.name,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -83,6 +83,13 @@ class MainActivity : FlutterActivity() {
                 "getUrl" -> {
                     // Only return URL once to prevent double processing
                     if (!urlAlreadyRetrieved) {
+                        // Check if this is a main app launch (not from shortcut)
+                        if (intent.action == Intent.ACTION_MAIN) {
+                            Log.d(TAG, "Main app launch detected, returning null")
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+                        
                         // First try to get URL from intent extra
                         var url = intent.getStringExtra("url")
                         
@@ -171,12 +178,11 @@ class MainActivity : FlutterActivity() {
         
         Log.d(TAG, "onNewIntent - URL: $url")
         
-        if (!url.isNullOrEmpty()) {
-            // Send the new URL to Flutter
-            methodChannel?.invokeMethod("onNewUrl", url)
-            // Reset flag for next intent
-            urlAlreadyRetrieved = false
-        }
+        // Always send to Flutter, even if null (for main app launches)
+        methodChannel?.invokeMethod("onNewUrl", url)
+        
+        // Reset flag for next intent
+        urlAlreadyRetrieved = false
     }
 
     private suspend fun changeAppIcon(iconUrlString: String, appName: String): Boolean = withContext(Dispatchers.IO) {

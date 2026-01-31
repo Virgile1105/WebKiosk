@@ -15,6 +15,7 @@ class KioskWebViewScreen extends StatefulWidget {
   final bool useCustomKeyboard;
   final bool disableCopyPaste;
   final String? shortcutIconUrl;
+  final String? shortcutName;
 
   const KioskWebViewScreen({
     super.key,
@@ -23,6 +24,7 @@ class KioskWebViewScreen extends StatefulWidget {
     this.useCustomKeyboard = false,
     this.disableCopyPaste = false,
     this.shortcutIconUrl,
+    this.shortcutName,
   });
 
   @override
@@ -42,6 +44,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   bool _keyboardMinimized = false;
   bool _isExpandedMode = false; // Track if we're showing expanded keyboard (alphabetic + numeric)
   bool _isShift = false; // Track Shift state (temporary, toggles off after use)
+  bool _keyboardSetupDone = false; // Track if custom keyboard has been set up for current page
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
   Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
@@ -51,6 +54,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   String _appVersion = '';
   Orientation? _previousOrientation; // Track previous orientation for reset on rotation
   late AudioPlayer _audioPlayer;
+  bool _hasError = false; // Track if there's a webview error
+  String _errorDescription = ''; // Store the error description
 
   @override
   void didChangeDependencies() {
@@ -340,6 +345,19 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               );
             } else {
               // Actual page finished loadingrun              if (!mounted) return;
+              // Set transition flag to false now that page has loaded
+              _controller.runJavaScript('''
+                // Remove transition blocking CSS
+                const transitionStyle = document.querySelector('style[data-transition-block]');
+                if (transitionStyle) {
+                  transitionStyle.remove();
+                }
+                // Restore input functionality
+                document.querySelectorAll('input, textarea, select').forEach(function(el) {
+                  el.removeAttribute('readonly');
+                  // Don't remove inputmode="none" here - let the custom keyboard setup handle it
+                });
+              ''');
               setState(() {
                 _isLoading = false;
               });
@@ -348,18 +366,45 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               if (widget.disableAutoFocus) {
                 _preventAutoFocus();
               }
-              // Set up custom keyboard after page loads
-              if (widget.useCustomKeyboard) {
-                _setupCustomKeyboard();
-              }
+              // Custom keyboard is now set up earlier in onProgress
+              // if (widget.useCustomKeyboard) {
+              //   _setupCustomKeyboard();
+              // }
             }
           },
           onPageStarted: (String url) {
             // Only set loading for actual URL, not blank page
             if (!url.contains('data:text/html') && url != 'about:blank') {
               if (!mounted) return;
+              // Reset error state when starting to load a new page
+              setState(() {
+                _hasError = false;
+                _errorDescription = '';
+              });
+              // Immediately blur all inputs and set transition flag to prevent keyboard flickering
+              _controller.runJavaScript('''
+                // Blur all inputs immediately to prevent focus events
+                document.querySelectorAll('input, textarea, select').forEach(function(el) {
+                  el.blur();
+                  el.setAttribute('inputmode', 'none');
+                  el.setAttribute('readonly', 'true');
+                });
+                // Set transition flag to prevent keyboard events
+                window.isTransitioning = true;
+                // Reset custom keyboard setup flag
+                window.customKeyboardSetup = false;
+                // Add global CSS to prevent IME during transition
+                if (!document.querySelector('style[data-transition-block]')) {
+                  const style = document.createElement('style');
+                  style.setAttribute('data-transition-block', 'true');
+                  style.textContent = 'input, textarea, select { ime-mode: disabled !important; -webkit-ime-mode: disabled !important; inputmode: none !important; }';
+                  document.head.appendChild(style);
+                }
+              ''');
               setState(() {
                 _isLoading = true;
+                _showCustomKeyboard = false; // Hide keyboard during transition
+                _keyboardSetupDone = false; // Reset keyboard setup flag for new page
                 _currentUrl = url;
                 _extractWebsiteName(url);
               });
@@ -370,9 +415,21 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             setState(() {
               _loadingProgress = progress / 100;
             });
+            // Set up custom keyboard early when page is 50% loaded
+            if (progress >= 50 && widget.useCustomKeyboard && !_keyboardSetupDone) {
+              _keyboardSetupDone = true;
+              _setupCustomKeyboard();
+            }
           },
           onWebResourceError: (WebResourceError error) {
             debugPrint('WebView error: ${error.description}');
+            if (mounted) {
+              setState(() {
+                _hasError = true;
+                _errorDescription = error.description ?? 'Unknown error';
+                _isLoading = false;
+              });
+            }
           },
         ),
       );
@@ -454,7 +511,17 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           console.log('Custom keyboard already set up, skipping');
           return;
         }
-        window.customKeyboardSetup = true;
+        // Don't set the flag yet - set it at the end
+
+        // Initialize transition flag
+        if (typeof window.isTransitioning === 'undefined') {
+          window.isTransitioning = false;
+        }
+
+        // Initialize keyboard visibility flag
+        if (typeof window.customKeyboardVisible === 'undefined') {
+          window.customKeyboardVisible = false;
+        }
 
         // Add CSS to ensure cursor is visible and prevent IME
         if (!document.querySelector('style[data-custom-keyboard]')) {
@@ -542,7 +609,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           window.inputListenersSetup = true;
 
           function setupInputListeners() {
-            const inputs = document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
+            const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
             console.log('Found ' + inputs.length + ' input elements');
             debugLog.postMessage('Found ' + inputs.length + ' input elements');
             inputs.forEach(function(input) {
@@ -553,7 +620,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 ${widget.disableCopyPaste ? 'disableCopyPaste(input);' : ''}
                 input.addEventListener('focus', function(e) {
                   console.log('Custom keyboard: Input field focused');
+                  console.log('Flags - isTransitioning:', window.isTransitioning, 'customKeyboardSetup:', window.customKeyboardSetup);
                   debugLog.postMessage('Custom keyboard: Input field focused');
+                  if (window.isTransitioning || !window.customKeyboardSetup) {
+                    console.log('Ignoring focus - transitioning or not set up yet');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                  }
                   e.preventDefault();
                   e.stopPropagation();
                   
@@ -565,6 +639,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                     // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                     target.focus();
+                    window.customKeyboardVisible = true;
                     showCustomKeyboard.postMessage('show');
                   } else {
                     // Aggressive IME prevention strategy for other fields
@@ -587,12 +662,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                     }, 10);
                     
+                    window.customKeyboardVisible = true;
                     showCustomKeyboard.postMessage('show');
                   }
                   return false;
                 });
                 input.addEventListener('blur', function(e) {
                   console.log('Custom keyboard: Input field blurred');
+                  window.customKeyboardVisible = false;
                   hideCustomKeyboard.postMessage('hide');
                 });
                 input.addEventListener('input', function(e) {
@@ -605,18 +682,46 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           // Initial setup
           setupInputListeners();
 
+          // Mark keyboard as set up after basic event listeners are attached
+          window.customKeyboardSetup = true;
+          console.log('Custom keyboard basic setup complete - focus events now allowed');
+          // Clear transition flag since keyboard is ready
+          window.isTransitioning = false;
+
+          // Double check: if there's already a focused input element and keyboard is hidden, show the keyboard
+          setTimeout(function() {
+            const activeElement = document.activeElement;
+            if (activeElement && !window.customKeyboardVisible && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.contentEditable === 'true' || activeElement.getAttribute('role') === 'textbox' || activeElement.getAttribute('role') === 'combobox' || activeElement.getAttribute('role') === 'searchbox' || activeElement.getAttribute('role') === 'spinbutton' || activeElement.getAttribute('role') === 'slider' || activeElement.getAttribute('role') === 'listbox' || activeElement.tagName === 'SELECT')) {
+              // Skip button inputs
+              if (activeElement.tagName === 'INPUT' && (activeElement.type === 'button' || activeElement.type === 'submit' || activeElement.type === 'reset')) {
+                return;
+              }
+              console.log('Double check: Found already focused input and keyboard is hidden, showing keyboard');
+              window.customKeyboardVisible = true;
+              showCustomKeyboard.postMessage('show');
+            }
+          }, 100);
+
           // Watch for new elements
           const observer = new MutationObserver(function(mutations) {
             mutations.forEach(function(mutation) {
               mutation.addedNodes.forEach(function(node) {
                 if (node.nodeType === 1) {
                   if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
+                    // Skip button inputs
+                    if (node.tagName === 'INPUT' && (node.type === 'button' || node.type === 'submit' || node.type === 'reset')) {
+                      return;
+                    }
                     if (!node.hasAttribute('data-custom-keyboard')) {
                       node.setAttribute('data-custom-keyboard', 'true');
                       node.setAttribute('inputmode', 'none');
                       ${widget.disableCopyPaste ? 'disableCopyPaste(node);' : ''}
                       node.addEventListener('focus', function(e) {
                         console.log('Custom keyboard: Input field focused');
+                        if (window.isTransitioning || !window.customKeyboardSetup) {
+                          console.log('Ignoring focus - transitioning or not set up yet');
+                          return;
+                        }
                         e.preventDefault();
                         e.stopPropagation();
                         
@@ -628,6 +733,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                           // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                           target.focus();
+                          window.customKeyboardVisible = true;
                           showCustomKeyboard.postMessage('show');
                         } else {
                           // Aggressive IME prevention strategy for other fields
@@ -653,12 +759,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           console.log('Sending show message to custom keyboard');
                           console.log('showCustomKeyboard object:', showCustomKeyboard);
                           console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
+                          window.customKeyboardVisible = true;
                           showCustomKeyboard.postMessage('show');
                         }
                         return false;
                       });
                       node.addEventListener('blur', function(e) {
                         console.log('Custom keyboard: Input field blurred');
+                        window.customKeyboardVisible = false;
                         hideCustomKeyboard.postMessage('hide');
                       });
                       node.addEventListener('input', function(e) {
@@ -674,6 +782,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         ${widget.disableCopyPaste ? 'disableCopyPaste(input);' : ''}
                         input.addEventListener('focus', function(e) {
                           console.log('Custom keyboard: Input field focused');
+                          if (window.isTransitioning || !window.customKeyboardSetup) {
+                            console.log('Ignoring focus - transitioning or not set up yet');
+                            return;
+                          }
                           e.preventDefault();
                           e.stopPropagation();
                           
@@ -685,6 +797,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                             // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                             target.focus();
+                            window.customKeyboardVisible = true;
                             showCustomKeyboard.postMessage('show');
                           } else {
                             // Aggressive IME prevention strategy for other fields
@@ -707,12 +820,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                             }, 10);
                             
+                            window.customKeyboardVisible = true;
                             showCustomKeyboard.postMessage('show');
                           }
                           return false;
                         });
                         input.addEventListener('blur', function(e) {
                           console.log('Custom keyboard: Input field blurred');
+                          window.customKeyboardVisible = false;
                           hideCustomKeyboard.postMessage('hide');
                         });
                         input.addEventListener('input', function(e) {
@@ -751,7 +866,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 var script = doc.createElement('script');
                 script.textContent = \`
                   function setupInputListeners() {
-                    const inputs = document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
+                    const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
                     console.log('Found ' + inputs.length + ' input elements in iframe');
                     inputs.forEach(function(input) {
                       if (!input.hasAttribute('data-custom-keyboard')) {
@@ -759,6 +874,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         input.setAttribute('inputmode', 'none');
                         input.addEventListener('focus', function(e) {
                           console.log('Custom keyboard: Input field focused in iframe');
+                          if (window.isTransitioning || !window.customKeyboardSetup) {
+                            console.log('Ignoring focus - transitioning or not set up yet');
+                            return;
+                          }
                           e.preventDefault();
                           e.stopPropagation();
                           var target = e.target;
@@ -787,11 +906,19 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       mutation.addedNodes.forEach(function(node) {
                         if (node.nodeType === 1) {
                           if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
+                            // Skip button inputs
+                            if (node.tagName === 'INPUT' && (node.type === 'button' || node.type === 'submit' || node.type === 'reset')) {
+                              return;
+                            }
                             if (!node.hasAttribute('data-custom-keyboard')) {
                               node.setAttribute('data-custom-keyboard', 'true');
                               node.setAttribute('inputmode', 'none');
                               node.addEventListener('focus', function(e) {
                                 console.log('Custom keyboard: Input field focused in iframe');
+                                if (window.isTransitioning || !window.customKeyboardSetup) {
+                                  console.log('Ignoring focus - transitioning or not set up yet');
+                                  return;
+                                }
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var target = e.target;
@@ -813,13 +940,17 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               });
                             }
                           }
-                          const inputs = node.querySelectorAll('input, textarea, [contenteditable]');
+                          const inputs = node.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable]');
                           inputs.forEach(function(input) {
                             if (!input.hasAttribute('data-custom-keyboard')) {
                               input.setAttribute('data-custom-keyboard', 'true');
                               input.setAttribute('inputmode', 'none');
                               input.addEventListener('focus', function(e) {
                                 console.log('Custom keyboard: Input field focused in iframe');
+                                if (window.isTransitioning || !window.customKeyboardSetup) {
+                                  console.log('Ignoring focus - transitioning or not set up yet');
+                                  return;
+                                }
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var target = e.target;
@@ -862,9 +993,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           window.addEventListener('message', function(e) {
             if (e.data === 'showCustomKeyboard') {
               console.log('Received show from iframe');
+              window.customKeyboardVisible = true;
               showCustomKeyboard.postMessage('show');
             } else if (e.data === 'hideCustomKeyboard') {
               console.log('Received hide from iframe');
+              window.customKeyboardVisible = false;
               hideCustomKeyboard.postMessage('hide');
             } else if (typeof e.data === 'string' && e.data.startsWith('debugLog:')) {
               debugLog.postMessage(e.data.substring(9));
@@ -949,6 +1082,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         observer.observe(document.body, { childList: true, subtree: true });
 
         console.log('Custom keyboard JavaScript injected');
+        // Flag is now set earlier after basic setup
       })();
     ''');
   }
@@ -1013,6 +1147,65 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               color: Colors.white,
               child: const Center(
                 child: CircularProgressIndicator(),
+              ),
+            ),
+          
+          // Error overlay
+          if (_hasError)
+            Container(
+              color: Colors.white,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 80,
+                        color: Colors.red.shade400,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Unable to load webpage',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey.shade800,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'The website could not be reached. Please check your internet connection and try again.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error: $_errorDescription',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                          fontFamily: 'monospace',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      ElevatedButton.icon(
+                        onPressed: _retryLoading,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Try Again'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           
@@ -1133,7 +1326,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text(
-                  _customAppName.isNotEmpty ? _customAppName : _websiteName,
+                  widget.shortcutName ?? (_customAppName.isNotEmpty ? _customAppName : _websiteName),
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -1221,33 +1414,24 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       icon: Icons.refresh,
                       title: 'Reload Page',
                       onTap: () {
-                        _controller.reload();
-                        Navigator.pop(context);
-                      },
-                    ),
-                    _buildMenuTile(
-                      icon: Icons.home,
-                      title: 'Home',
-                      onTap: () {
-                        _controller.loadRequest(Uri.parse(widget.initialUrl));
-                        Navigator.pop(context);
-                      },
-                    ),
-                    const Divider(color: Colors.white24, height: 32),
-                    _buildMenuTile(
-                      icon: Icons.settings,
-                      title: 'Website Settings',
-                      onTap: () {
                         Navigator.pop(context); // Close drawer
-                        _showWebsiteSettingsMenu();
-                      },
-                    ),
-                    _buildMenuTile(
-                      icon: Icons.apps,
-                      title: 'Back to Shortcuts',
-                      onTap: () {
-                        Navigator.of(context).pop(); // Close drawer
+                        // Navigate back to shortcuts and immediately back to webview for complete reset
                         Navigator.of(context).pop(); // Go back to shortcut list
+                        // Immediately navigate back to webview with same parameters for complete reset
+                        Future.microtask(() {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => KioskWebViewScreen(
+                                initialUrl: widget.initialUrl,
+                                disableAutoFocus: widget.disableAutoFocus,
+                                useCustomKeyboard: widget.useCustomKeyboard,
+                                disableCopyPaste: widget.disableCopyPaste,
+                                shortcutIconUrl: widget.shortcutIconUrl,
+                                shortcutName: widget.shortcutName,
+                              ),
+                            ),
+                          );
+                        });
                       },
                     ),
                   ],
@@ -1282,99 +1466,40 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     );
   }
 
-  void _showWebsiteSettingsMenu() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Colors.blue.shade800,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Text(
-                'Website Settings',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const Divider(color: Colors.white24),
-            ListTile(
-              leading: const Icon(Icons.link, color: Colors.white),
-              title: const Text(
-                'Change URL',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showChangeUrlDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.label, color: Colors.white),
-              title: const Text(
-                'Change App Name',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              subtitle: Text(
-                _customAppName.isEmpty ? 'Not set' : _customAppName,
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showChangeAppNameDialog();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.image, color: Colors.white),
-              title: const Text(
-                'Change Icon URL',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              subtitle: Text(
-                _customIconUrl.isEmpty ? 'Not set' : _customIconUrl,
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showChangeIconUrlDialog();
-              },
-            ),
-            const Divider(color: Colors.white24),
-            ListTile(
-              leading: const Icon(Icons.add_to_home_screen, color: Colors.white),
-              title: const Text(
-                'Add to Home Screen',
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
-              subtitle: const Text(
-                'Create shortcut with custom URL & icon',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showCreateShortcutDialog();
-              },
-            ),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
+  void _retryLoading() {
+    if (mounted) {
+      // Complete reset - like app is closed and opened again
+      setState(() {
+        // Reset all state variables to initial state
+        _currentUrl = '';
+        _websiteName = '';
+        _faviconUrl = '';
+        _isLoading = true;
+        _loadingProgress = 0.0;
+        _customAppName = '';
+        _customIconUrl = '';
+        _showCustomKeyboard = false;
+        _keyboardMinimized = true; // Reset to minimized state
+        _isExpandedMode = false;
+        _isShift = false;
+        _keyboardSetupDone = false;
+        _keyboardPosition = const Offset(100, 200); // Reset to default
+        _minimizedIconPosition = const Offset(100, 200); // Reset to default
+        _savedExpandedKeyboardPosition = null; // Clear saved positions
+        _savedNumericKeyboardPosition = null;
+        _keyboardHasBeenPositioned = false; // Reset positioning flag
+        _appVersion = '';
+        _hasError = false; // Clear error state
+        _errorDescription = '';
+      });
+
+      // Reinitialize WebView completely
+      _initializeWebView();
+
+      // Reload custom settings and app version
+      _loadCustomSettings();
+      _loadAppVersion();
+    }
   }
 
   void _showCreateShortcutDialog() {
@@ -1515,45 +1640,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showChangeUrlDialog() {
-    final TextEditingController urlController = TextEditingController(text: _currentUrl);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Change URL'),
-        content: TextField(
-          controller: urlController,
-          decoration: const InputDecoration(
-            labelText: 'URL',
-            hintText: 'https://example.com',
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.url,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              String url = urlController.text.trim();
-              if (url.isNotEmpty) {
-                if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                  url = 'https://$url';
-                }
-                _controller.loadRequest(Uri.parse(url));
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Load'),
-          ),
-        ],
       ),
     );
   }
