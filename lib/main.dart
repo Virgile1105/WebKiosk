@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/shortcut_list_screen.dart';
 import 'screens/kiosk_webview_screen.dart';
 import 'models/shortcut_item.dart';
+import 'utils/logger.dart';
 
 const MethodChannel platform = MethodChannel('webkiosk.builder/shortcut');
 
@@ -46,7 +47,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
           _navigateToUrl(url);
         } else if (url == null) {
           // Main app launch, reset to shortcut list
-          debugPrint('Main app launch detected, resetting to shortcut list');
+          log('Main app launch detected, resetting to shortcut list');
           setState(() {
             _initialUrl = null;
             _launchedFromShortcut = false;
@@ -82,14 +83,14 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
   }
 
   Future<void> _getInitialUrl() async {
-    debugPrint('Starting initial URL check...');
+    log('Starting initial URL check...');
     try {
       final String? url = await platform.invokeMethod('getUrl');
-      debugPrint('Got initial URL: $url');
+      log('Got initial URL: $url');
       if (url != null && url.isNotEmpty) {
         // Look up the shortcut settings for this URL
         final settings = await _getShortcutSettings(url);
-        debugPrint('Setting initial URL to: $url');
+        log('Setting initial URL to: $url');
         setState(() {
           _initialUrl = url;
           _disableAutoFocus = settings['disableAutoFocus'] ?? false;
@@ -117,7 +118,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
           );
         });
       } else {
-        debugPrint('No initial URL found, showing shortcut list');
+        log('No initial URL found, showing shortcut list');
         setState(() {
           _initialUrlCheckComplete = true;
           _launchedFromShortcut = false;
@@ -135,7 +136,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         });
       }
     } catch (e) {
-      debugPrint('Error getting initial URL: $e');
+      log('Error getting initial URL: $e');
       setState(() {
         _initialUrlCheckComplete = true;
         _launchedFromShortcut = false;
@@ -173,7 +174,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         }
       }
     } catch (e) {
-      debugPrint('Error getting shortcut settings: $e');
+      log('Error getting shortcut settings: $e');
     }
     return {
       'disableAutoFocus': false, 
@@ -191,12 +192,12 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         _navigateToUrl(url);
       }
     } catch (e) {
-      debugPrint('Error checking for new URL: $e');
+      log('Error checking for new URL: $e');
     }
   }
 
   void _navigateToUrl(String url) async {
-    debugPrint('Navigating to URL: $url');
+    log('Navigating to URL: $url');
     
     // Get the shortcut settings BEFORE navigating
     final settings = await _getShortcutSettings(url);
@@ -228,7 +229,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl, launchedFromShortcut: $_launchedFromShortcut');
+    log('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl, launchedFromShortcut: $_launchedFromShortcut');
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: 'WebKiosk Builder',

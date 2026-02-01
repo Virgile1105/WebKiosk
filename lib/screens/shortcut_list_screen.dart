@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
 import 'kiosk_webview_screen.dart';
+import '../utils/logger.dart';
 
 class ShortcutListScreen extends StatefulWidget {
   const ShortcutListScreen({super.key});
@@ -65,16 +66,16 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _loadAppVersion() async {
-    debugPrint('Starting to load app version...');
+    log('Starting to load app version...');
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      debugPrint('PackageInfo loaded - version: ${packageInfo.version}, buildNumber: ${packageInfo.buildNumber}');
+      log('PackageInfo loaded - version: ${packageInfo.version}, buildNumber: ${packageInfo.buildNumber}');
       final versionString = '${packageInfo.version}+${packageInfo.buildNumber}';
-      debugPrint('Final version string: $versionString');
+      log('Final version string: $versionString');
       _appVersion = versionString;
-      debugPrint('App version set to: $_appVersion');
+      log('App version set to: $_appVersion');
     } catch (e) {
-      debugPrint('Error fetching app version: $e');
+      log('Error fetching app version: $e');
       _appVersion = 'Unknown';
     }
   }
@@ -292,7 +293,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           final ByteData data = await rootBundle.load(shortcut.iconUrl);
           iconBytes = data.buffer.asUint8List();
         } catch (e) {
-          debugPrint('Failed to load asset icon: $e');
+          log('Failed to load asset icon: $e');
           // Continue without icon bytes - Android will use default icon
         }
       }
@@ -308,7 +309,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         'disableCopyPaste': shortcut.disableCopyPaste,
       });
     } catch (e) {
-      debugPrint('Error creating home screen shortcut: $e');
+      log('Error creating home screen shortcut: $e');
     }
   }
 
@@ -318,7 +319,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         'shortcutId': 'webkiosk_${shortcut.id}',
       });
     } catch (e) {
-      debugPrint('Error deleting home screen shortcut: $e');
+      log('Error deleting home screen shortcut: $e');
     }
   }
 
@@ -448,7 +449,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Building ShortcutListScreen - appVersion: $_appVersion');
+    log('Building ShortcutListScreen - appVersion: $_appVersion');
     return Scaffold(
       appBar: AppBar(
         title: Column(
