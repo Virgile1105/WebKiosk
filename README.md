@@ -1,4 +1,4 @@
-# WebKiosk Builder
+# DeviceGate
 
 A Flutter application that functions as a web kiosk builder, allowing users to browse websites in full-screen mode with a swipe-accessible menu.
 

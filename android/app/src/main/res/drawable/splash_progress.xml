@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- DeviceGate Launch Splash Screen with Loading Indicator -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- White background -->
     <item android:drawable="@android:color/white" />
@@ -13,12 +12,20 @@
             android:height="120dp" />
     </item>
 
-    <!-- Loading indicator circle below icon -->
-    <item android:top="550dp" android:gravity="center_horizontal">
+    <!-- Loading text below icon -->
+    <item android:top="520dp" android:gravity="center_horizontal">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <size android:width="200dp" android:height="40dp" />
+        </shape>
+    </item>
+
+    <!-- Progress indicator circle -->
+    <item android:top="580dp" android:gravity="center_horizontal">
         <shape android:shape="oval">
             <solid android:color="@android:color/transparent" />
-            <stroke android:width="4dp" android:color="#2196F3" />
-            <size android:width="48dp" android:height="48dp" />
+            <stroke android:width="3dp" android:color="#2196F3" />
+            <size android:width="40dp" android:height="40dp" />
         </shape>
     </item>
 </layer-list>

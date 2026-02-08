@@ -10,6 +10,9 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/logger.dart';
+import '../widgets/battery_indicator.dart';
+import 'password_dialog.dart';
+import 'webview_settings_screen.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
@@ -46,7 +49,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   bool _keyboardMinimized = false;
   bool _isExpandedMode = false; // Track if we're showing expanded keyboard (alphabetic + numeric)
   bool _isShift = false; // Track Shift state (temporary, toggles off after use)
-  bool _keyboardSetupDone = false; // Track if custom keyboard has been set up for current page
+  late bool _useCustomKeyboardRuntime; // Runtime setting for custom keyboard
+  late bool _disableCopyPasteRuntime; // Runtime setting for copy/paste
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
   Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
@@ -58,6 +62,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   late AudioPlayer _audioPlayer;
   bool _hasError = false; // Track if there's a webview error
   String _errorDescription = ''; // Store the error description
+  Map<String, dynamic>? _wifiInfo; // Store WiFi information for error page
+  Map<String, dynamic>? _websiteStatus; // Store live website connection status
+  Timer? _networkCheckTimer; // Timer for periodic network status checks
+  bool _isCheckingWebsite = false; // Prevent overlapping website status checks
+  bool _isResettingInternet = false; // Track if internet reset is in progress
 
   @override
   void didChangeDependencies() {
@@ -175,11 +184,44 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   @override
   void initState() {
     super.initState();
+    _useCustomKeyboardRuntime = widget.useCustomKeyboard;
+    _disableCopyPasteRuntime = widget.disableCopyPaste;
     _audioPlayer = AudioPlayer();
     _initializeWebView();
     _loadCustomSettings(); // Fire-and-forget async loading
     _loadAppVersion(); // Load app version
     _keyboardMinimized = true; // Show keyboard shortcut by default
+    
+    // If custom keyboard is enabled, disable system keyboards at device level
+    if (_useCustomKeyboardRuntime) {
+      _disableSystemKeyboards();
+    }
+  }
+  
+  /// Disables system keyboards at device owner level (cleaner than JavaScript workarounds)
+  Future<void> _disableSystemKeyboards() async {
+    try {
+      final result = await platform.invokeMethod('disableSystemKeyboards');
+      if (result == true) {
+        log('System keyboards disabled successfully via device owner');
+      } else {
+        log('Failed to disable system keyboards (not device owner?)');
+      }
+    } catch (e) {
+      log('Error disabling system keyboards: $e');
+    }
+  }
+  
+  /// Re-enables system keyboards
+  Future<void> _enableSystemKeyboards() async {
+    try {
+      final result = await platform.invokeMethod('enableSystemKeyboards');
+      if (result == true) {
+        log('System keyboards enabled successfully');
+      }
+    } catch (e) {
+      log('Error enabling system keyboards: $e');
+    }
   }
 
   Future<void> _loadCustomSettings() async {
@@ -228,6 +270,31 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       if (mounted) {
         setState(() {
           _appVersion = 'Unknown';
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchWifiInfo() async {
+    log('_fetchWifiInfo called');
+    try {
+      final wifiInfo = await platform.invokeMethod('getWifiInfo');
+      if (mounted) {
+        setState(() {
+          // Properly cast the map from platform channel
+          if (wifiInfo is Map) {
+            _wifiInfo = Map<String, dynamic>.from(wifiInfo);
+          } else {
+            _wifiInfo = {'error': 'Invalid WiFi data format'};
+          }
+        });
+      }
+      log('Fetched WiFi info: $wifiInfo');
+    } catch (e) {
+      log('Error fetching WiFi info: $e');
+      if (mounted) {
+        setState(() {
+          _wifiInfo = {'error': e.toString()};
         });
       }
     }
@@ -346,20 +413,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 },
               );
             } else {
-              // Actual page finished loadingrun              if (!mounted) return;
-              // Set transition flag to false now that page has loaded
-              _controller.runJavaScript('''
-                // Remove transition blocking CSS
-                const transitionStyle = document.querySelector('style[data-transition-block]');
-                if (transitionStyle) {
-                  transitionStyle.remove();
-                }
-                // Restore input functionality
-                document.querySelectorAll('input, textarea, select').forEach(function(el) {
-                  el.removeAttribute('readonly');
-                  // Don't remove inputmode="none" here - let the custom keyboard setup handle it
-                });
-              ''');
+              // Actual page finished loading
+              if (!mounted) return;
               setState(() {
                 _isLoading = false;
               });
@@ -368,45 +423,18 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               if (widget.disableAutoFocus) {
                 _preventAutoFocus();
               }
-              // Custom keyboard is now set up earlier in onProgress
-              // if (widget.useCustomKeyboard) {
-              //   _setupCustomKeyboard();
-              // }
+              // Set up custom keyboard after page loads
+              if (_useCustomKeyboardRuntime) {
+                _setupCustomKeyboard();
+              }
             }
           },
           onPageStarted: (String url) {
             // Only set loading for actual URL, not blank page
             if (!url.contains('data:text/html') && url != 'about:blank') {
               if (!mounted) return;
-              // Reset error state when starting to load a new page
-              setState(() {
-                _hasError = false;
-                _errorDescription = '';
-              });
-              // Immediately blur all inputs and set transition flag to prevent keyboard flickering
-              _controller.runJavaScript('''
-                // Blur all inputs immediately to prevent focus events
-                document.querySelectorAll('input, textarea, select').forEach(function(el) {
-                  el.blur();
-                  el.setAttribute('inputmode', 'none');
-                  el.setAttribute('readonly', 'true');
-                });
-                // Set transition flag to prevent keyboard events
-                window.isTransitioning = true;
-                // Reset custom keyboard setup flag
-                window.customKeyboardSetup = false;
-                // Add global CSS to prevent IME during transition
-                if (!document.querySelector('style[data-transition-block]')) {
-                  const style = document.createElement('style');
-                  style.setAttribute('data-transition-block', 'true');
-                  style.textContent = 'input, textarea, select { ime-mode: disabled !important; -webkit-ime-mode: disabled !important; inputmode: none !important; }';
-                  document.head.appendChild(style);
-                }
-              ''');
               setState(() {
                 _isLoading = true;
-                _showCustomKeyboard = false; // Hide keyboard during transition
-                _keyboardSetupDone = false; // Reset keyboard setup flag for new page
                 _currentUrl = url;
                 _extractWebsiteName(url);
               });
@@ -417,19 +445,22 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             setState(() {
               _loadingProgress = progress / 100;
             });
-            // Set up custom keyboard early when page is 50% loaded
-            if (progress >= 50 && widget.useCustomKeyboard && !_keyboardSetupDone) {
-              _keyboardSetupDone = true;
-              _setupCustomKeyboard();
-            }
           },
           onWebResourceError: (WebResourceError error) {
-            log('WebView error: ${error.description}');
-            if (mounted) {
+            log('WebView error: ${error.description} (isForMainFrame: ${error.isForMainFrame})');
+            // Only show error page for main frame errors (actual page load failures)
+            // Ignore sub-resource errors (images, scripts, CSS, etc.)
+            if (error.isForMainFrame == true && mounted) {
+              // Fetch WiFi information for the error page
+              _fetchWifiInfo();
+              // Start periodic network check
+              _startNetworkCheckTimer();
               setState(() {
                 _hasError = true;
                 _errorDescription = error.description ?? 'Unknown error';
                 _isLoading = false;
+                // Hide custom keyboard when error page is shown
+                _showCustomKeyboard = false;
               });
             }
           },
@@ -510,25 +541,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     log('Setting up custom keyboard for URL: ${widget.initialUrl}');
     _controller.runJavaScript('''
       (function() {
-        // Set up conditional logging based on debug mode
-        window.debugLog = ${kDebugMode ? 'console.log.bind(console)' : 'function() {}'};
-        
         // Check if custom keyboard is already set up
         if (window.customKeyboardSetup) {
-          window.debugLog('Custom keyboard already set up, skipping');
+          console.log('Custom keyboard already set up, skipping');
           return;
         }
-        // Don't set the flag yet - set it at the end
-
-        // Initialize transition flag
-        if (typeof window.isTransitioning === 'undefined') {
-          window.isTransitioning = false;
-        }
-
-        // Initialize keyboard visibility flag
-        if (typeof window.customKeyboardVisible === 'undefined') {
-          window.customKeyboardVisible = false;
-        }
+        window.customKeyboardSetup = true;
 
         // Add CSS to ensure cursor is visible and prevent IME
         if (!document.querySelector('style[data-custom-keyboard]')) {
@@ -545,7 +563,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           }
         });
 
-        ${widget.disableCopyPaste ? '''
+        ${_disableCopyPasteRuntime ? '''
         // Disable copy/paste if option is enabled
         function disableCopyPaste(el) {
           if (!el.hasAttribute('data-copy-paste-disabled')) {
@@ -617,21 +635,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
 
           function setupInputListeners() {
             const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
-            window.debugLog('Found ' + inputs.length + ' input elements');
             inputs.forEach(function(input) {
-              window.debugLog('Setting up input:', input.tagName, input.type, input.contentEditable, input.getAttribute('role'));
               if (!input.hasAttribute('data-custom-keyboard')) {
                 input.setAttribute('data-custom-keyboard', 'true');
-                ${widget.disableCopyPaste ? 'disableCopyPaste(input);' : ''}
+                ${_disableCopyPasteRuntime ? 'disableCopyPaste(input);' : ''}
                 input.addEventListener('focus', function(e) {
-                  window.debugLog('Custom keyboard: Input field focused');
-                  window.debugLog('Flags - isTransitioning:', window.isTransitioning, 'customKeyboardSetup:', window.customKeyboardSetup);
-                  if (window.isTransitioning || !window.customKeyboardSetup) {
-                    window.debugLog('Ignoring focus - transitioning or not set up yet');
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return;
-                  }
                   e.preventDefault();
                   e.stopPropagation();
                   
@@ -643,7 +651,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                     // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                     target.focus();
-                    window.customKeyboardVisible = true;
                     showCustomKeyboard.postMessage('show');
                   } else {
                     // Aggressive IME prevention strategy for other fields
@@ -666,18 +673,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                     }, 10);
                     
-                    window.customKeyboardVisible = true;
                     showCustomKeyboard.postMessage('show');
                   }
                   return false;
                 });
                 input.addEventListener('blur', function(e) {
-                  window.debugLog('Custom keyboard: Input field blurred');
-                  window.customKeyboardVisible = false;
                   hideCustomKeyboard.postMessage('hide');
-                });
-                input.addEventListener('input', function(e) {
-                  window.debugLog('External input detected: ' + e.target.value);
                 });
               }
             });
@@ -686,22 +687,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           // Initial setup
           setupInputListeners();
 
-          // Mark keyboard as set up after basic event listeners are attached
-          window.customKeyboardSetup = true;
-          window.debugLog('Custom keyboard basic setup complete - focus events now allowed');
-          // Clear transition flag since keyboard is ready
-          window.isTransitioning = false;
-
-          // Double check: if there's already a focused input element and keyboard is hidden, show the keyboard
+          // Check if an input field already has focus after page load
           setTimeout(function() {
-            const activeElement = document.activeElement;
-            if (activeElement && !window.customKeyboardVisible && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.contentEditable === 'true' || activeElement.getAttribute('role') === 'textbox' || activeElement.getAttribute('role') === 'combobox' || activeElement.getAttribute('role') === 'searchbox' || activeElement.getAttribute('role') === 'spinbutton' || activeElement.getAttribute('role') === 'slider' || activeElement.getAttribute('role') === 'listbox' || activeElement.tagName === 'SELECT')) {
-              // Skip button inputs
-              if (activeElement.tagName === 'INPUT' && (activeElement.type === 'button' || activeElement.type === 'submit' || activeElement.type === 'reset')) {
-                return;
-              }
-              window.debugLog('Double check: Found already focused input and keyboard is hidden, showing keyboard');
-              window.customKeyboardVisible = true;
+            if (document.activeElement && 
+                (document.activeElement.tagName === 'INPUT' || 
+                 document.activeElement.tagName === 'TEXTAREA' || 
+                 document.activeElement.contentEditable === 'true' ||
+                 document.activeElement.getAttribute('role') === 'textbox')) {
+              console.log('Custom keyboard: Field already focused on page load, showing keyboard');
               showCustomKeyboard.postMessage('show');
             }
           }, 100);
@@ -719,13 +712,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                     if (!node.hasAttribute('data-custom-keyboard')) {
                       node.setAttribute('data-custom-keyboard', 'true');
                       node.setAttribute('inputmode', 'none');
-                      ${widget.disableCopyPaste ? 'disableCopyPaste(node);' : ''}
+                      ${_disableCopyPasteRuntime ? 'disableCopyPaste(node);' : ''}
                       node.addEventListener('focus', function(e) {
-                        window.debugLog('Custom keyboard: Input field focused');
-                        if (window.isTransitioning || !window.customKeyboardSetup) {
-                          window.debugLog('Ignoring focus - transitioning or not set up yet');
-                          return;
-                        }
+                        console.log('Custom keyboard: Input field focused');
                         e.preventDefault();
                         e.stopPropagation();
                         
@@ -737,7 +726,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                         if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                           // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                           target.focus();
-                          window.customKeyboardVisible = true;
                           showCustomKeyboard.postMessage('show');
                         } else {
                           // Aggressive IME prevention strategy for other fields
@@ -760,21 +748,15 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                             target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                           }, 10);
                           
-                          window.debugLog('Sending show message to custom keyboard');
-                          window.debugLog('showCustomKeyboard object:', showCustomKeyboard);
-                          window.debugLog('window.showCustomKeyboard:', window.showCustomKeyboard);
-                          window.customKeyboardVisible = true;
+                          console.log('Sending show message to custom keyboard');
+                          console.log('showCustomKeyboard object:', showCustomKeyboard);
+                          console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
                           showCustomKeyboard.postMessage('show');
                         }
                         return false;
                       });
                       node.addEventListener('blur', function(e) {
-                        window.debugLog('Custom keyboard: Input field blurred');
-                        window.customKeyboardVisible = false;
                         hideCustomKeyboard.postMessage('hide');
-                      });
-                      node.addEventListener('input', function(e) {
-                        window.debugLog('External input detected: ' + e.target.value || e.target.textContent);
                       });
                     }
                   } else {
@@ -783,13 +765,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       if (!input.hasAttribute('data-custom-keyboard')) {
                         input.setAttribute('data-custom-keyboard', 'true');
                         input.setAttribute('inputmode', 'none');
-                        ${widget.disableCopyPaste ? 'disableCopyPaste(input);' : ''}
+                        ${_disableCopyPasteRuntime ? 'disableCopyPaste(input);' : ''}
                         input.addEventListener('focus', function(e) {
-                          window.debugLog('Custom keyboard: Input field focused');
-                          if (window.isTransitioning || !window.customKeyboardSetup) {
-                            window.debugLog('Ignoring focus - transitioning or not set up yet');
-                            return;
-                          }
+                          console.log('Custom keyboard: Input field focused');
                           e.preventDefault();
                           e.stopPropagation();
                           
@@ -801,7 +779,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
                             // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
                             target.focus();
-                            window.customKeyboardVisible = true;
                             showCustomKeyboard.postMessage('show');
                           } else {
                             // Aggressive IME prevention strategy for other fields
@@ -824,21 +801,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               target.addEventListener('mousedown', preventIMEReactivation, { once: true });
                             }, 10);
                             
-                            window.customKeyboardVisible = true;
                             showCustomKeyboard.postMessage('show');
                           }
                           return false;
                         });
                         input.addEventListener('blur', function(e) {
-                          window.debugLog('Custom keyboard: Input field blurred');
-                          window.customKeyboardVisible = false;
                           hideCustomKeyboard.postMessage('hide');
-                        });
-                        input.addEventListener('input', function(e) {
-                          window.debugLog('External input detected: ' + e.target.value);
-                        });
-                        input.addEventListener('input', function(e) {
-                          window.debugLog('External input detected: ' + e.target.value);
                         });
                       }
                     });
@@ -858,7 +826,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
 
           // Global focus listener for debugging
           document.addEventListener('focus', function(e) {
-            window.debugLog('Global focus event on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
+            console.log('Global focus event on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
           }, true);
 
           // Handle iframes
@@ -870,17 +838,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                 script.textContent = \`
                   function setupInputListeners() {
                     const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
-                    window.debugLog('Found ' + inputs.length + ' input elements in iframe');
+                    console.log('Found ' + inputs.length + ' input elements in iframe');
                     inputs.forEach(function(input) {
                       if (!input.hasAttribute('data-custom-keyboard')) {
                         input.setAttribute('data-custom-keyboard', 'true');
                         input.setAttribute('inputmode', 'none');
                         input.addEventListener('focus', function(e) {
-                          window.debugLog('Custom keyboard: Input field focused in iframe');
-                          if (window.isTransitioning || !window.customKeyboardSetup) {
-                            window.debugLog('Ignoring focus - transitioning or not set up yet');
-                            return;
-                          }
+                          console.log('Custom keyboard: Input field focused in iframe');
                           e.preventDefault();
                           e.stopPropagation();
                           var target = e.target;
@@ -889,21 +853,30 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                           setTimeout(function() {
                             target.removeAttribute('readonly');
                             target.focus();
-                            window.debugLog('Sending show message from iframe');
+                            console.log('Sending show message from iframe');
                             window.parent.postMessage('showCustomKeyboard', '*');
                           }, 10);
                         });
                         input.addEventListener('blur', function(e) {
-                          window.debugLog('Custom keyboard: Input field blurred in iframe');
                           window.parent.postMessage('hideCustomKeyboard', '*');
-                        });
-                        input.addEventListener('input', function(e) {
-                          window.debugLog('External input detected in iframe: ' + (e.target.value || e.target.textContent));
                         });
                       }
                     });
                   }
                   setupInputListeners();
+                  
+                  // Check if an input field already has focus in iframe
+                  setTimeout(function() {
+                    if (document.activeElement && 
+                        (document.activeElement.tagName === 'INPUT' || 
+                         document.activeElement.tagName === 'TEXTAREA' || 
+                         document.activeElement.contentEditable === 'true' ||
+                         document.activeElement.getAttribute('role') === 'textbox')) {
+                      console.log('Custom keyboard: Field already focused in iframe, showing keyboard');
+                      window.parent.postMessage('showCustomKeyboard', '*');
+                    }
+                  }, 100);
+                  
                   const observer = new MutationObserver(function(mutations) {
                     mutations.forEach(function(mutation) {
                       mutation.addedNodes.forEach(function(node) {
@@ -917,11 +890,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               node.setAttribute('data-custom-keyboard', 'true');
                               node.setAttribute('inputmode', 'none');
                               node.addEventListener('focus', function(e) {
-                                window.debugLog('Custom keyboard: Input field focused in iframe');
-                                if (window.isTransitioning || !window.customKeyboardSetup) {
-                                  window.debugLog('Ignoring focus - transitioning or not set up yet');
-                                  return;
-                                }
+                                console.log('Custom keyboard: Input field focused in iframe');
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var target = e.target;
@@ -930,16 +899,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                                 setTimeout(function() {
                                   target.removeAttribute('readonly');
                                   target.focus();
-                                  window.debugLog('Sending show message from iframe');
+                                  console.log('Sending show message from iframe');
                                   window.parent.postMessage('showCustomKeyboard', '*');
                                 }, 10);
                               });
                               node.addEventListener('blur', function(e) {
-                                window.debugLog('Custom keyboard: Input field blurred in iframe');
                                 window.parent.postMessage('hideCustomKeyboard', '*');
-                              });
-                              node.addEventListener('input', function(e) {
-                                window.debugLog('External input detected in iframe: ' + (e.target.value || e.target.textContent));
                               });
                             }
                           }
@@ -949,11 +914,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               input.setAttribute('data-custom-keyboard', 'true');
                               input.setAttribute('inputmode', 'none');
                               input.addEventListener('focus', function(e) {
-                                window.debugLog('Custom keyboard: Input field focused in iframe');
-                                if (window.isTransitioning || !window.customKeyboardSetup) {
-                                  window.debugLog('Ignoring focus - transitioning or not set up yet');
-                                  return;
-                                }
+                                console.log('Custom keyboard: Input field focused in iframe');
                                 e.preventDefault();
                                 e.stopPropagation();
                                 var target = e.target;
@@ -962,16 +923,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                                 setTimeout(function() {
                                   target.removeAttribute('readonly');
                                   target.focus();
-                                  window.debugLog('Sending show message from iframe');
+                                  console.log('Sending show message from iframe');
                                   window.parent.postMessage('showCustomKeyboard', '*');
                                 }, 10);
                               });
                               input.addEventListener('blur', function(e) {
-                                window.debugLog('Custom keyboard: Input field blurred in iframe');
                                 window.parent.postMessage('hideCustomKeyboard', '*');
-                              });
-                              input.addEventListener('input', function(e) {
-                                window.debugLog('External input detected in iframe: ' + (e.target.value || e.target.textContent));
                               });
                             }
                           });
@@ -981,27 +938,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   });
                   observer.observe(doc.body, { childList: true, subtree: true });
                   doc.addEventListener('focus', function(e) {
-                    window.debugLog('Global focus event in iframe on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
+                    console.log('Global focus event in iframe on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
                     window.parent.postMessage('debugLog:' + 'Global focus event in iframe on: ' + e.target.tagName + ' ' + e.target.type + ' ' + e.target.contentEditable + ' ' + e.target.getAttribute('role'), '*');
                   }, true);
                 \`;
                 doc.head.appendChild(script);
               }
             } catch (e) {
-              window.debugLog('Cannot access iframe');
+              console.log('Cannot access iframe');
             }
           });
 
           // Listen for messages from iframes
           window.addEventListener('message', function(e) {
             if (e.data === 'showCustomKeyboard') {
-              window.debugLog('Received show from iframe');
-              window.customKeyboardVisible = true;
+              console.log('Received show from iframe');
               showCustomKeyboard.postMessage('show');
             } else if (e.data === 'hideCustomKeyboard') {
-              window.debugLog('Received hide from iframe');
-              window.customKeyboardVisible = false;
+              console.log('Received hide from iframe');
               hideCustomKeyboard.postMessage('hide');
+            } else if (typeof e.data === 'string' && e.data.startsWith('debugLog:')) {
+              debugLog.postMessage(e.data.substring(9));
             }
           });
 
@@ -1020,69 +977,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           el.disabled = true;
         });
 
-        // Monitor for specific field value to trigger warning sound
-        function checkForWarningValue() {
-          const inputs = document.querySelectorAll('input, textarea, select');
-          for (let input of inputs) {
-            if (input.value === "Le UM scanné provient d'un transport") {
-              if (!window.warningSoundPlayed) {
-                window.warningSoundPlayed = true;
-                playWarningSound.postMessage('Warning value detected');
-              }
-              break;
-            }
+        // Check first input field once on page load for warning or error messages
+        // SAP displays messages immediately when page loads - no need to listen for changes
+        /*
+        const firstInput = document.querySelector('input, textarea, select');
+        if (firstInput && firstInput.value) {
+          const value = firstInput.value;
+          
+          // Check for warning message
+          if (value === "Le UM scanné provient d'un transport") {
+            firstInput.blur(); // Only blur the first field
+            // playWarningSound.postMessage('Warning value detected');
+          }
+          // Check for error message
+          else if (value.startsWith("Erreur")) {
+            firstInput.blur(); // Only blur the first field
+            // playErrorSound.postMessage('Error value detected');
           }
         }
+        */
 
-        // Monitor for error messages starting with "Erreur"
-        function checkForErrorValue() {
-          const inputs = document.querySelectorAll('input, textarea, select');
-          for (let input of inputs) {
-            if (input.value && input.value.startsWith("Erreur")) {
-              if (!window.errorSoundPlayed) {
-                window.errorSoundPlayed = true;
-                // Unfocus all fields
-                document.querySelectorAll('input, textarea, select').forEach(function(el) {
-                  el.blur();
-                });
-                playErrorSound.postMessage('Error value detected');
-              }
-              break;
-            }
-          }
-        }
-
-        // Check immediately
-        checkForWarningValue();
-        checkForErrorValue();
-
-        // Add listeners to all inputs
-        document.addEventListener('input', checkForWarningValue);
-        document.addEventListener('change', checkForWarningValue);
-        document.addEventListener('input', checkForErrorValue);
-        document.addEventListener('change', checkForErrorValue);
-
-        // Also use MutationObserver for dynamic content
-        const observer = new MutationObserver(function(mutations) {
-          mutations.forEach(function(mutation) {
-            if (mutation.type === 'childList') {
-              mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                  const inputs = node.querySelectorAll ? node.querySelectorAll('input, textarea, select') : [];
-                  inputs.forEach(function(input) {
-                    input.addEventListener('input', checkForWarningValue);
-                    input.addEventListener('change', checkForWarningValue);
-                    input.addEventListener('input', checkForErrorValue);
-                    input.addEventListener('change', checkForErrorValue);
-                  });
-                }
-              });
-            }
-          });
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-
-        window.debugLog('Custom keyboard JavaScript injected');
+        console.log('Custom keyboard JavaScript injected');
         // Flag is now set earlier after basic setup
       })();
     ''');
@@ -1155,7 +1070,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           if (_hasError)
             Container(
               color: Colors.white,
-              child: Center(
+              child: SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.all(32.0),
                   child: Column(
@@ -1168,7 +1083,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'Unable to load webpage',
+                        'Impossible de charger la page web',
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -1178,31 +1093,322 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'The website could not be reached. Please check your internet connection and try again.',
+                        'Le site web n\'a pas pu être atteint. Veuillez vérifier votre connexion Internet et réessayer.',
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey.shade600,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Error: $_errorDescription',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                          fontFamily: 'monospace',
+                     
+                      const SizedBox(height: 24),
+                      // WiFi Information Section
+                      if (_wifiInfo != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Left column: Current Connection and Saved Networks
+                              Expanded(
+                                flex: 2,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Current Network Status
+                                    if (_wifiInfo!['currentNetwork'] != null) ...[
+                                      Builder(
+                                        builder: (context) {
+                                          try {
+                                            return _buildNetworkStatus(_wifiInfo!['currentNetwork']);
+                                          } catch (e) {
+                                            log('Error building network status: $e');
+                                            return const SizedBox.shrink();
+                                          }
+                                        },
+                                      ),
+                                      const SizedBox(height: 16),
+                                    ],
+                                    // Saved Networks
+                                    if (_wifiInfo!['savedNetworks'] != null && (_wifiInfo!['savedNetworks'] as List).isNotEmpty) ...[
+                                      Text(
+                                        'Réseaux enregistrés :',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      ...(_wifiInfo!['savedNetworks'] as List).map((network) {
+                                        try {
+                                          return _buildSavedNetworkItem(network);
+                                        } catch (e) {
+                                          log('Error building saved network item: $e');
+                                          return const SizedBox.shrink();
+                                        }
+                                      }),
+                                    ] else if (_wifiInfo!['error'] != null) ...[
+                                      Text(
+                                        'Erreur d\'accès WiFi :',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.red.shade200),
+                                        ),
+                                        child: Text(
+                                          _wifiInfo!['error'],
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.red.shade800,
+                                          ),
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.shade50,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: Colors.amber.shade200),
+                                        ),
+                                        child: Text(
+                                          'Aucun réseau enregistré trouvé ou la liste des réseaux est vide.',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.amber.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              // Right column: Internet Connection Status
+                              Expanded(
+                                flex: 1,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      'État Internet',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: Builder(
+                                        builder: (context) {
+                                          // Get live website status check
+                                          final websiteCanConnect = _websiteStatus?['canConnect'] == true;
+                                          final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
+                                          final websiteError = _websiteStatus?['error'] as String?;
+                                          
+                                          // Check actual internet connectivity (8.8.8.8 test)
+                                          final hasInternet = _wifiInfo?['hasInternet'] == true;
+                                          
+                                          // Determine internet status (3 states):
+                                          // Priority: Check for website-specific errors FIRST (these prove internet works)
+                                          final Color bgColor;
+                                          final Color borderColor;
+                                          final Color iconColor;
+                                          final Color textColor;
+                                          final IconData icon;
+                                          final String title;
+                                          final String subtitle;
+                                          
+                                          if (websiteIsSuccess && websiteCanConnect) {
+                                            // State 3: Website is accessible - Internet OK
+                                            bgColor = Colors.green.shade50;
+                                            borderColor = Colors.green.shade200;
+                                            iconColor = Colors.green;
+                                            textColor = Colors.green.shade800;
+                                            icon = Icons.cloud_done;
+                                            title = 'Internet OK';
+                                            subtitle = 'Connected';
+                                          } else if (websiteError == 'connection_refused' || 
+                                                     websiteError == 'connection_reset' ||
+                                                     websiteError == 'timed_out' ||
+                                                     (websiteCanConnect && !websiteIsSuccess)) {
+                                            // State 2: Internet IS available but website has issues
+                                          // - connection_refused: Server actively refused connection (internet works)
+                                          // - connection_reset: Connection was reset by server (internet works)
+                                          // - timed_out: Server not responding but DNS resolved (internet works)
+                                          // - HTTP error codes 4xx/5xx (internet works)
+                                          bgColor = Colors.orange.shade50;
+                                          borderColor = Colors.orange.shade200;
+                                          iconColor = Colors.orange;
+                                          textColor = Colors.orange.shade800;
+                                          icon = Icons.error_outline;
+                                          title = 'Erreur du site web';
+                                          subtitle = websiteError == 'connection_refused' ? 'Serveur refusé' : 
+                                                     websiteError == 'timed_out' ? 'Délai d\'attente du serveur' : 'Problème serveur';
+                                        } else if (websiteError == 'name_not_resolved' || !hasInternet) {
+                                          // State 1: No internet at all
+                                          // - name_not_resolved: DNS failed (no internet)
+                                          // - !hasInternet: Cannot reach 8.8.8.8 (no internet)
+                                          bgColor = Colors.red.shade50;
+                                          borderColor = Colors.red.shade200;
+                                          iconColor = Colors.red;
+                                          textColor = Colors.red.shade800;
+                                          icon = Icons.cloud_off;
+                                          title = 'Pas d\'Internet';
+                                          subtitle = 'Non disponible';
+                                        } else {
+                                          // State 1: Unknown/no connection
+                                          bgColor = Colors.red.shade50;
+                                          borderColor = Colors.red.shade200;
+                                          iconColor = Colors.red;
+                                          textColor = Colors.red.shade800;
+                                          icon = Icons.cloud_off;
+                                          title = 'Pas d\'Internet';
+                                          subtitle = 'Non disponible';
+                                        }
+                                        
+                                          return Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: bgColor,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: borderColor),
+                                            ),
+                                            child: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  icon,
+                                                  size: 40,
+                                                  color: iconColor,
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  title,
+                                                  style: TextStyle(
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: textColor,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  subtitle,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: textColor,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                                const SizedBox(height: 12),
+                                                // Dynamic status description
+                                                Text(
+                                                  _websiteStatus != null 
+                                                    ? 'État: ${_websiteStatus!['errorMessage'] ?? _websiteStatus!['error'] ?? 'Vérification...'}'
+                                                    : _errorDescription,
+                                                  style: const TextStyle(
+                                                    fontSize: 8,
+                                                    color: Colors.black54,
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                      ElevatedButton.icon(
-                        onPressed: _retryLoading,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Try Again'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
+                        const SizedBox(height: 32),
+                      ],
+                      Builder(
+                        builder: (context) {
+                          // Check if WiFi is connected
+                          final hasWifiConnection = _wifiInfo?['currentNetwork'] != null;
+                          // Check if Internet is OK
+                          final websiteCanConnect = _websiteStatus?['canConnect'] == true;
+                          final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
+                          final internetIsOk = websiteIsSuccess && websiteCanConnect;
+                          // Enable buttons only when both WiFi and Internet are OK
+                          final buttonsEnabled = hasWifiConnection && internetIsOk;
+                          // Capture the resetting state in the Builder
+                          final isResetting = _isResettingInternet;
+                          
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: buttonsEnabled ? _reloadPage : null,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Réessayer'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  backgroundColor: Colors.lightGreen,
+                                  disabledBackgroundColor: Colors.grey.shade300,
+                                  disabledForegroundColor: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              OutlinedButton.icon(
+                                onPressed: buttonsEnabled ? _retryLoading : null,
+                                icon: const Icon(Icons.restart_alt),
+                                label: const Text('Recharger'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  side: BorderSide(
+                                    color: buttonsEnabled ? Colors.blue.shade400 : Colors.grey.shade300, 
+                                    width: 2
+                                  ),
+                                  disabledForegroundColor: Colors.grey.shade600,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              ElevatedButton.icon(
+                                onPressed: isResetting ? null : _resetInternet,
+                                icon: isResetting 
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : const Icon(Icons.wifi_off),
+                                label: Text(isResetting ? 'Réinitialisation...' : 'Réinitialiser Internet'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.orange.shade300,
+                                  disabledForegroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -1223,11 +1429,25 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               ),
             ),
 
+          // Battery indicator in top-right corner
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color.fromRGBO(51, 61, 71, 0.9),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const BatteryIndicator(),
+            ),
+          ),
+
           // Custom keyboard
-          if (_showCustomKeyboard && widget.useCustomKeyboard) ...[
+          if (_showCustomKeyboard && _useCustomKeyboardRuntime) ...[
             Builder(
               builder: (context) {
-                log('Rendering custom keyboard - _showCustomKeyboard: $_showCustomKeyboard, useCustomKeyboard: ${widget.useCustomKeyboard}');
+                log('Rendering custom keyboard - _showCustomKeyboard: $_showCustomKeyboard, useCustomKeyboard: $_useCustomKeyboardRuntime');
                 return _buildCustomKeyboard();
               },
             ),
@@ -1236,6 +1456,130 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       ),
       // Left swipe drawer menu
       drawer: _buildDrawer(),
+    );
+  }
+
+Widget _buildNetworkStatus(dynamic currentNetwork) {
+    if (currentNetwork == null || currentNetwork is! Map) {
+      return const SizedBox.shrink();
+    }
+
+    final networkMap = Map<String, dynamic>.from(currentNetwork as Map);
+    final isDisconnected = networkMap['status'] == 'disconnected';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'WIFI Connection',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDisconnected ? Colors.red.shade50 : Colors.green.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isDisconnected ? Colors.red.shade200 : Colors.green.shade200,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isDisconnected ? Icons.wifi_off : Icons.wifi,
+                size: 20,
+                color: isDisconnected ? Colors.red : Colors.green,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isDisconnected ? 'Disconnected' : (networkMap['ssid'] ?? 'Unknown Network'),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: isDisconnected ? Colors.red.shade800 : Colors.green.shade800,
+                      ),
+                    ),
+                    if (!isDisconnected && networkMap['signalStrength'] != null)
+                      Text(
+                        'Signal: ${networkMap['signalStrength']}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+Widget _buildSavedNetworkItem(dynamic network) {
+    if (network == null || network is! Map) {
+      return const SizedBox.shrink();
+    }
+
+    final networkMap = Map<String, dynamic>.from(network as Map);
+    final isConnected = networkMap['status'] == 'connected';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isConnected ? Colors.blue.shade50 : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isConnected ? Colors.blue.shade200 : Colors.grey.shade200,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isConnected ? Icons.wifi : Icons.wifi_lock,
+            size: 16,
+            color: isConnected ? Colors.blue : Colors.grey.shade600,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              networkMap['ssid'] ?? 'Unknown',
+              style: TextStyle(
+                fontSize: 13,
+                color: isConnected ? Colors.blue.shade800 : Colors.grey.shade700,
+                fontWeight: isConnected ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ),
+          if (isConnected)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Connected',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.blue.shade800,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1395,7 +1739,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'App Version: $_appVersion',
+                      'Version: $_appVersion',
                       style: const TextStyle(
                         fontSize: 14,
                         color: Colors.white,
@@ -1413,7 +1757,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                   children: [
                     _buildMenuTile(
                       icon: Icons.refresh,
-                      title: 'Reload Page',
+                      title: 'Recharger l\'application',
                       onTap: () {
                         Navigator.pop(context); // Close drawer
                         // Navigate back to shortcuts and immediately back to webview for complete reset
@@ -1425,14 +1769,40 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
                               builder: (context) => KioskWebViewScreen(
                                 initialUrl: widget.initialUrl,
                                 disableAutoFocus: widget.disableAutoFocus,
-                                useCustomKeyboard: widget.useCustomKeyboard,
-                                disableCopyPaste: widget.disableCopyPaste,
+                                useCustomKeyboard: _useCustomKeyboardRuntime,
+                                disableCopyPaste: _disableCopyPasteRuntime,
                                 shortcutIconUrl: widget.shortcutIconUrl,
                                 shortcutName: widget.shortcutName,
                               ),
                             ),
                           );
                         });
+                      },
+                    ),
+                    _buildMenuTile(
+                      icon: Icons.exit_to_app,
+                      title: 'Quitter',
+                      onTap: () {
+                        Navigator.pop(context); // Close drawer
+                        Navigator.of(context).pop(); // Return to home screen
+                      },
+                    ),
+                    _buildMenuTile(
+                      icon: Icons.settings,
+                      title: 'Paramètres',
+                      onTap: () async {
+                        Navigator.pop(context); // Close drawer
+                        // Show password dialog first
+                        final authenticated = await showDialog<bool>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (context) => const PasswordDialog(),
+                        );
+                        
+                        // Only show settings if authenticated
+                        if (authenticated == true && mounted) {
+                          _showWebViewSettings();
+                        }
                       },
                     ),
                   ],
@@ -1467,39 +1837,170 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     );
   }
 
+  void _showWebViewSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WebViewSettingsScreen(
+          useCustomKeyboard: _useCustomKeyboardRuntime,
+          disableCopyPaste: _disableCopyPasteRuntime,
+          onSettingsChanged: (useCustomKeyboard, disableCopyPaste) {
+            setState(() {
+              _useCustomKeyboardRuntime = useCustomKeyboard;
+              _disableCopyPasteRuntime = disableCopyPaste;
+              if (!useCustomKeyboard) {
+                _showCustomKeyboard = false;
+              }
+            });
+            // Reload page to apply copy/paste changes if it changed
+            if (disableCopyPaste != _disableCopyPasteRuntime) {
+              _controller.reload();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  void _reloadPage() {
+    if (mounted) {
+      // Stop network check timer
+      _stopNetworkCheckTimer();
+      
+      setState(() {
+        _hasError = false;
+        _errorDescription = '';
+        _isLoading = true;
+      });
+      // Just reload the current URL
+      _controller.loadRequest(
+        Uri.parse(widget.initialUrl),
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      );
+    }
+  }
+
   void _retryLoading() {
     if (mounted) {
-      // Complete reset - like app is closed and opened again
-      setState(() {
-        // Reset all state variables to initial state
-        _currentUrl = '';
-        _websiteName = '';
-        _faviconUrl = '';
-        _isLoading = true;
-        _loadingProgress = 0.0;
-        _customAppName = '';
-        _customIconUrl = '';
-        _showCustomKeyboard = false;
-        _keyboardMinimized = true; // Reset to minimized state
-        _isExpandedMode = false;
-        _isShift = false;
-        _keyboardSetupDone = false;
-        _keyboardPosition = const Offset(100, 200); // Reset to default
-        _minimizedIconPosition = const Offset(100, 200); // Reset to default
-        _savedExpandedKeyboardPosition = null; // Clear saved positions
-        _savedNumericKeyboardPosition = null;
-        _keyboardHasBeenPositioned = false; // Reset positioning flag
-        _appVersion = '';
-        _hasError = false; // Clear error state
-        _errorDescription = '';
+      // Navigate back and reopen - cleanest way to reset everything
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => KioskWebViewScreen(
+            initialUrl: widget.initialUrl,
+            disableAutoFocus: widget.disableAutoFocus,
+            useCustomKeyboard: widget.useCustomKeyboard,
+            disableCopyPaste: widget.disableCopyPaste,
+            shortcutIconUrl: widget.shortcutIconUrl,
+            shortcutName: widget.shortcutName,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _resetInternet() async {
+    setState(() {
+      _isResettingInternet = true;
+    });
+    
+    // Animate for 2 seconds before the blocking call
+    for (int i = 0; i < 40; i++) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    
+    try {
+      log('Attempting to reset internet connection');
+      await platform.invokeMethod('resetInternet');
+      
+      // Animate for 2 seconds after the reset
+      for (int i = 0; i < 40; i++) {
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+    } catch (e) {
+      log('Error resetting internet: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Échec de la réinitialisation d\'Internet : $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResettingInternet = false;
+        });
+      }
+    }
+  }
+
+  void _startNetworkCheckTimer() {
+    // Cancel any existing timer
+    _networkCheckTimer?.cancel();
+    
+    // Start a periodic timer to check network status every 1 second
+    _networkCheckTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted && _hasError) {
+        // Update WiFi info
+        _fetchWifiInfo();
+        // Check website status (non-blocking, fire-and-forget)
+        if (!_isCheckingWebsite) {
+          _checkWebsiteStatus();
+        }
+      } else {
+        // Stop timer if error is cleared
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _checkWebsiteStatus() async {
+    // Prevent overlapping checks
+    if (_isCheckingWebsite) {
+      log('Skipping website check - already in progress');
+      return;
+    }
+    
+    _isCheckingWebsite = true;
+    try {
+      final status = await platform.invokeMethod('checkWebsiteStatus', {
+        'url': widget.initialUrl,
       });
+      
+      if (mounted) {
+        setState(() {
+          if (status is Map) {
+            _websiteStatus = Map<String, dynamic>.from(status);
+            log('Website status: canConnect=${_websiteStatus?['canConnect']}, isSuccess=${_websiteStatus?['isSuccess']}, error=${_websiteStatus?['error']}');
+          }
+        });
+      }
+    } catch (e) {
+      log('Error checking website status: $e');
+    } finally {
+      _isCheckingWebsite = false;
+    }
+  }
 
-      // Reinitialize WebView completely
-      _initializeWebView();
+  void _stopNetworkCheckTimer() {
+    _networkCheckTimer?.cancel();
+    _networkCheckTimer = null;
+  }
 
-      // Reload custom settings and app version
-      _loadCustomSettings();
-      _loadAppVersion();
+  Future<void> _checkAndAutoReload() async {
+    // Check if WiFi is connected and has internet by attempting to reload
+    if (_wifiInfo != null && _wifiInfo!['currentNetwork'] != null) {
+      final currentNetwork = _wifiInfo!['currentNetwork'];
+      if (currentNetwork is Map && currentNetwork['status'] != 'disconnected') {
+        log('Network appears to be back, attempting auto-reload...');
+        _reloadPage();
+      }
     }
   }
 
@@ -1841,7 +2342,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     );
   }
 
-  static const platform = MethodChannel('webkiosk.builder/shortcut');
+  static const platform = MethodChannel('devicegate.app/shortcut');
 
   Future<void> _createShortcutWithParams(
     String name, 
@@ -3199,14 +3700,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     if (isBackspace) {
       // Send backspace key
       _controller.runJavaScript('''
-        window.debugLog('Keyboard: backspace pressed');
+        console.log('Keyboard: backspace pressed');
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          window.debugLog('Keyboard: found active input for backspace');
+          console.log('Keyboard: found active input for backspace');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
-            window.debugLog('Keyboard: input supports selection, using setRangeText');
+            console.log('Keyboard: input supports selection, using setRangeText');
             const start = input.selectionStart;
             const end = input.selectionEnd;
             if (start !== end) {
@@ -3218,16 +3719,16 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             }
           } else {
             // For inputs that don't support selection, remove last character
-            window.debugLog('Keyboard: input does not support selection, removing last char');
+            console.log('Keyboard: input does not support selection, removing last char');
             if (input.value.length > 0) {
               input.value = input.value.slice(0, -1);
             }
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          window.debugLog('Keyboard: backspace complete, value now:', input.value);
+          console.log('Keyboard: backspace complete, value now:', input.value);
         } else {
-          window.debugLog('Keyboard: no active input found for backspace');
+          console.log('Keyboard: no active input found for backspace');
         }
       ''');
     } else if (key == '←') {
@@ -3268,14 +3769,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     } else if (key == '⌫') {
       // Delete key (backspace functionality)
       _controller.runJavaScript('''
-        window.debugLog('Keyboard: backspace pressed (⌫ key)');
+        console.log('Keyboard: backspace pressed (⌫ key)');
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          window.debugLog('Keyboard: found active input for backspace');
+          console.log('Keyboard: found active input for backspace');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
-            window.debugLog('Keyboard: input supports selection, using setRangeText');
+            console.log('Keyboard: input supports selection, using setRangeText');
             const start = input.selectionStart;
             const end = input.selectionEnd;
             if (start !== end) {
@@ -3287,16 +3788,16 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
             }
           } else {
             // For inputs that don't support selection, remove last character
-            window.debugLog('Keyboard: input does not support selection, removing last char');
+            console.log('Keyboard: input does not support selection, removing last char');
             if (input.value.length > 0) {
               input.value = input.value.slice(0, -1);
             }
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          window.debugLog('Keyboard: backspace complete, value now:', input.value);
+          console.log('Keyboard: backspace complete, value now:', input.value);
         } else {
-          window.debugLog('Keyboard: no active input found for backspace');
+          console.log('Keyboard: no active input found for backspace');
         }
       ''');
     } else if (key == 'Tab') {
@@ -3444,7 +3945,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     } else if (key == '⏎') {
       // Enter key - dispatch native enter key events to let the page handle it
       _controller.runJavaScript('''
-        window.debugLog('Keyboard: Enter key pressed, dispatching native events');
+        console.log('Keyboard: Enter key pressed, dispatching native events');
         if (document.activeElement) {
           // Dispatch keydown event
           const keydownEvent = new KeyboardEvent('keydown', {
@@ -3482,9 +3983,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
           });
           document.activeElement.dispatchEvent(keyupEvent);
           
-          window.debugLog('Keyboard: Enter events dispatched');
+          console.log('Keyboard: Enter events dispatched');
         } else {
-          window.debugLog('Keyboard: no active element found');
+          console.log('Keyboard: no active element found');
         }
       ''');
     } else {
@@ -3523,28 +4024,28 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
       
       final escapedKey = jsonEncode(keyToSend);
       _controller.runJavaScript('''
-        window.debugLog('Keyboard: attempting to insert key');
+        console.log('Keyboard: attempting to insert key');
         var keyToInsert = $escapedKey;
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          window.debugLog('Keyboard: found active input element');
+          console.log('Keyboard: found active input element');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
             const start = input.selectionStart;
             const end = input.selectionEnd;
-            window.debugLog('Keyboard: inserting key at position', start, end);
+            console.log('Keyboard: inserting key at position', start, end);
             input.setRangeText(keyToInsert, start, end, 'end');
           } else {
             // For inputs that don't support selection (like email, password), append to value
-            window.debugLog('Keyboard: input does not support selection, appending to value');
+            console.log('Keyboard: input does not support selection, appending to value');
             input.value += keyToInsert;
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          window.debugLog('Keyboard: insertion complete, value now:', input.value);
+          console.log('Keyboard: insertion complete, value now:', input.value);
         } else {
-          window.debugLog('Keyboard: no active input element found, activeElement:', document.activeElement);
+          console.log('Keyboard: no active input element found, activeElement:', document.activeElement);
         }
       ''');
     }
@@ -3625,7 +4126,16 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   }
 
   @override
+  @override
   void dispose() {
+    // Re-enable system keyboards when leaving the screen
+    if (_useCustomKeyboardRuntime) {
+      _enableSystemKeyboards();
+    }
+    
+    // Cancel network check timer
+    _networkCheckTimer?.cancel();
+    
     // Clean up WebView controller
     _controller.clearCache();
     _controller.clearLocalStorage();
@@ -3634,3 +4144,4 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   }
 }
 
+ 

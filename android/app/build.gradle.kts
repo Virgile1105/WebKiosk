@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.webkiosk.builder"
+    namespace = "com.devicegate.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.webkiosk.builder"
+        applicationId = "com.devicegate.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -32,10 +32,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("keystore.jks")
-            storePassword = "Casaldaquinta&99"
-            keyAlias = "webkiosk_key"
-            keyPassword = "Casaldaquinta&99"
+            storeFile = file("upload-keystore.jks")
+            storePassword = "devicegate123"
+            keyAlias = "upload"
+            keyPassword = "devicegate123"
         }
     }
 

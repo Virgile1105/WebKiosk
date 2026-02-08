@@ -1,9 +1,16 @@
+import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
+import '../widgets/battery_indicator.dart';
 import 'kiosk_webview_screen.dart';
+import 'settings_screen.dart';
+import 'password_dialog.dart';
+import 'add_shortcut_screen.dart';
+import 'add_apps_screen.dart';
 import '../utils/logger.dart';
 
 class ShortcutListScreen extends StatefulWidget {
@@ -14,10 +21,11 @@ class ShortcutListScreen extends StatefulWidget {
 }
 
 class _ShortcutListScreenState extends State<ShortcutListScreen> {
-  static const platform = MethodChannel('webkiosk.builder/shortcut');
+  static const platform = MethodChannel('devicegate.app/shortcut');
   List<ShortcutItem> _shortcuts = [];
   bool _isLoading = true;
   String _appVersion = '';
+  String _deviceName = 'DeviceGate';
 
   @override
   void initState() {
@@ -29,11 +37,25 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     await Future.wait([
       _loadShortcuts(),
       _loadAppVersion(),
+      _loadDeviceName(),
     ]);
     if (mounted) {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadDeviceName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _deviceName = prefs.getString('device_name') ?? 'DeviceGate';
+        });
+      }
+    } catch (e) {
+      log('Error loading device name: $e');
     }
   }
 
@@ -46,7 +68,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     if (shortcuts.isEmpty) {
       shortcuts.add(ShortcutItem(
         id: 'sap_ewm_default',
-        name: 'SAP_EWM',
+        name: 'SAP EWM',
         url: 'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
         iconUrl: 'assets/icon/SAP_EWM.png',
         disableAutoFocus: false,
@@ -77,6 +99,202 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     } catch (e) {
       log('Error fetching app version: $e');
       _appVersion = 'Unknown';
+    }
+  }
+
+  void _showSettingsMenu() async {
+    // Show password dialog first
+    final authenticated = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const PasswordDialog(),
+    );
+
+    // Only proceed to settings if authentication successful
+    if (authenticated == true) {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SettingsScreen(currentShortcuts: _shortcuts),
+        ),
+      );
+
+      // Reload device name when returning from settings
+      await _loadDeviceName();
+
+      if (result != null) {
+        if (result is ShortcutItem) {
+          // Handle single shortcut addition (from Add Shortcut)
+          setState(() {
+            _shortcuts.add(result);
+          });
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${result.name} added to home')),
+          );
+        }
+      } else if (result is Map<String, Map<String, dynamic>>) {
+        // Handle multiple app changes (from Add Apps)
+        await _handleAppChanges(result);
+      }
+    }
+  }
+
+  Future<void> _handleAppChanges(Map<String, Map<String, dynamic>> changes) async {
+    int addedCount = 0;
+    int removedCount = 0;
+
+    setState(() {
+      for (var entry in changes.entries) {
+        final packageName = entry.key;
+        final change = entry.value;
+        final action = change['action'] as String;
+
+        if (action == 'add') {
+          final appName = change['name'] as String;
+          final iconBase64 = change['icon'] as String?;
+          
+          final shortcut = ShortcutItem(
+            id: 'app_$packageName',
+            name: appName,
+            url: 'app://$packageName',
+            iconUrl: iconBase64 != null && iconBase64.isNotEmpty ? 'base64://$iconBase64' : '',
+            disableAutoFocus: false,
+            useCustomKeyboard: false,
+            disableCopyPaste: false,
+          );
+          _shortcuts.add(shortcut);
+          addedCount++;
+        } else if (action == 'remove') {
+          _shortcuts.removeWhere((s) => s.url == 'app://$packageName');
+          removedCount++;
+        }
+      }
+    });
+
+    await _saveShortcuts();
+
+    if (mounted) {
+      final message = <String>[];
+      if (addedCount > 0) message.add('$addedCount app${addedCount > 1 ? 's' : ''} added');
+      if (removedCount > 0) message.add('$removedCount app${removedCount > 1 ? 's' : ''} removed');
+      
+      if (message.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message.join(', '))),
+        );
+      }
+    }
+  }
+
+  void _exitToHome() async {
+    try {
+      // Go to Android home
+      await platform.invokeMethod('exitToHome');
+    } catch (e) {
+      log('Error exiting to home: $e');
+      // Fallback: just close the app
+      SystemNavigator.pop();
+    }
+  }
+
+  Future<void> _showAddAppsDialog() async {
+    try {
+      // Get list of installed apps from native
+      final List<dynamic> apps = await platform.invokeMethod('getInstalledApps');
+      
+      if (!mounted) return;
+      
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Select App to Add'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 400,
+              child: ListView.builder(
+                itemCount: apps.length,
+                itemBuilder: (context, index) {
+                  final app = apps[index] as Map;
+                  final appName = app['name'] as String;
+                  final packageName = app['packageName'] as String;
+                  final iconBase64 = app['icon'] as String?;
+                  
+                  Widget leading;
+                  if (iconBase64 != null && iconBase64.isNotEmpty) {
+                    try {
+                      final bytes = base64Decode(iconBase64);
+                      leading = Image.memory(
+                        bytes,
+                        width: 40,
+                        height: 40,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(Icons.android);
+                        },
+                      );
+                    } catch (e) {
+                      leading = const Icon(Icons.android);
+                    }
+                  } else {
+                    leading = const Icon(Icons.android);
+                  }
+                  
+                  return ListTile(
+                    leading: leading,
+                    title: Text(appName),
+                    subtitle: Text(packageName, style: const TextStyle(fontSize: 10)),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _addAppShortcut(appName, packageName, iconBase64);
+                    },
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      log('Error getting installed apps: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading apps: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _addAppShortcut(String appName, String packageName, String? iconBase64) async {
+    // Create a shortcut for the Android app
+    final shortcut = ShortcutItem(
+      id: 'app_$packageName',
+      name: appName,
+      url: 'app://$packageName',
+      iconUrl: iconBase64 != null && iconBase64.isNotEmpty ? 'base64://$iconBase64' : '',
+      disableAutoFocus: false,
+      useCustomKeyboard: false,
+      disableCopyPaste: false,
+    );
+    
+    setState(() {
+      _shortcuts.add(shortcut);
+    });
+    
+    await _saveShortcuts();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$appName added to home')),
+      );
     }
   }
 
@@ -273,9 +491,6 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       });
       await _saveShortcuts();
 
-      // Create home screen shortcut
-      await _createHomeScreenShortcut(shortcut);
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Shortcut "$name" added!')),
@@ -316,7 +531,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   Future<void> _deleteHomeScreenShortcut(ShortcutItem shortcut) async {
     try {
       await platform.invokeMethod('deleteShortcut', {
-        'shortcutId': 'webkiosk_${shortcut.id}',
+        'shortcutId': 'devicegate_${shortcut.id}',
       });
     } catch (e) {
       log('Error deleting home screen shortcut: $e');
@@ -328,34 +543,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Shortcut'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Are you sure you want to delete "${shortcut.name}"?'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber, color: Colors.orange),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Important: You must manually remove the shortcut from your home screen. Android does not allow apps to delete home screen shortcuts.',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        content: Text('Are you sure you want to delete "${shortcut.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -371,9 +559,6 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     );
 
     if (confirm == true) {
-      // Delete from home screen first
-      await _deleteHomeScreenShortcut(shortcut);
-      
       setState(() {
         _shortcuts.removeWhere((s) => s.id == shortcut.id);
       });
@@ -381,7 +566,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"${shortcut.name}" deleted. Remember to remove the shortcut from your home screen.')),
+          SnackBar(content: Text('"${shortcut.name}" deleted')),
         );
       }
     }
@@ -403,21 +588,6 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.add_to_home_screen),
-              title: const Text('Add to Home Screen'),
-              subtitle: const Text('Create another home screen shortcut'),
-              onTap: () {
-                Navigator.pop(context);
-                _createHomeScreenShortcut(shortcut).then((_) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Home screen shortcut created!')),
-                    );
-                  }
-                });
-              },
-            ),
-            ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete', style: TextStyle(color: Colors.red)),
               onTap: () {
@@ -431,20 +601,43 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     );
   }
 
-  void _openShortcut(ShortcutItem shortcut) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => KioskWebViewScreen(
-          initialUrl: shortcut.url,
-          disableAutoFocus: shortcut.disableAutoFocus,
-          useCustomKeyboard: shortcut.useCustomKeyboard,
-          disableCopyPaste: shortcut.disableCopyPaste,
-          shortcutIconUrl: shortcut.iconUrl,
-          shortcutName: shortcut.name,
+  void _openShortcut(ShortcutItem shortcut) async {
+    // Check if this is an app shortcut (starts with app://)
+    if (shortcut.url.startsWith('app://')) {
+      final packageName = shortcut.url.substring(6); // Remove 'app://' prefix
+      try {
+        final success = await platform.invokeMethod('launchApp', {'packageName': packageName});
+        if (!success) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to launch ${shortcut.name}')),
+            );
+          }
+        }
+      } catch (e) {
+        log('Error launching app: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error launching ${shortcut.name}: $e')),
+          );
+        }
+      }
+    } else {
+      // Regular web shortcut
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => KioskWebViewScreen(
+            initialUrl: shortcut.url,
+            disableAutoFocus: shortcut.disableAutoFocus,
+            useCustomKeyboard: shortcut.useCustomKeyboard,
+            disableCopyPaste: shortcut.disableCopyPaste,
+            shortcutIconUrl: shortcut.iconUrl,
+            shortcutName: shortcut.name,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -452,33 +645,44 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     log('Building ShortcutListScreen - appVersion: $_appVersion');
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          children: [
-            const Text('WebKiosk Builder'),
-            Text(
-              _appVersion.isNotEmpty ? 'Version $_appVersion' : 'Loading version...',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white70,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ],
+        title: Text(
+          _deviceName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w500,
+          ),
         ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.blue,
+        backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
+        actions: const [
+          BatteryIndicator(),
+        ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                    strokeWidth: 4,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Loading DeviceGate...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            )
           : _shortcuts.isEmpty
               ? _buildEmptyState()
               : _buildShortcutGrid(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addShortcut,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Shortcut'),
-      ),
     );
   }
 
@@ -515,20 +719,63 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Widget _buildShortcutGrid() {
+    // Determine cross axis count based on screen orientation
+    final orientation = MediaQuery.of(context).orientation;
+    final crossAxisCount = orientation == Orientation.portrait ? 3 : 6;
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
           childAspectRatio: 0.85,
         ),
-        itemCount: _shortcuts.length,
+        itemCount: _shortcuts.length + 1, // +1 for settings tile
         itemBuilder: (context, index) {
+          // Settings tile at the end
+          if (index == _shortcuts.length) {
+            return _buildSettingsTile();
+          }
           final shortcut = _shortcuts[index];
           return _buildShortcutTile(shortcut);
         },
+      ),
+    );
+  }
+
+  Widget _buildSettingsTile() {
+    return GestureDetector(
+      onTap: _showSettingsMenu,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.settings,
+              size: 40,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Settings',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
   }
@@ -545,7 +792,35 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: shortcut.iconUrl.startsWith('assets/')
+            child: shortcut.iconUrl.startsWith('base64://')
+                ? Builder(
+                    builder: (context) {
+                      try {
+                        final base64String = shortcut.iconUrl.substring(9); // Remove 'base64://'
+                        final bytes = base64Decode(base64String);
+                        return Image.memory(
+                          bytes,
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.android,
+                              size: 40,
+                              color: Colors.grey[600],
+                            );
+                          },
+                        );
+                      } catch (e) {
+                        return Icon(
+                          Icons.android,
+                          size: 40,
+                          color: Colors.grey[600],
+                        );
+                      }
+                    },
+                  )
+                : shortcut.iconUrl.startsWith('assets/')
                 ? Image.asset(
                     shortcut.iconUrl,
                     width: 64,

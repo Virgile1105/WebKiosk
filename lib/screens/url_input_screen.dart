@@ -93,7 +93,7 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'WebKiosk Builder',
+                      'DeviceGate',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.blue.shade700,

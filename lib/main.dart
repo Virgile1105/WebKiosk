@@ -6,7 +6,48 @@ import 'screens/kiosk_webview_screen.dart';
 import 'models/shortcut_item.dart';
 import 'utils/logger.dart';
 
-const MethodChannel platform = MethodChannel('webkiosk.builder/shortcut');
+const MethodChannel platform = MethodChannel('devicegate.app/shortcut');
+
+// Kiosk mode helper methods
+Future<bool> enableKioskMode() async {
+  try {
+    final bool result = await platform.invokeMethod('enableKioskMode');
+    return result;
+  } catch (e) {
+    log('Error enabling kiosk mode: $e');
+    return false;
+  }
+}
+
+Future<bool> disableKioskMode() async {
+  try {
+    final bool result = await platform.invokeMethod('disableKioskMode');
+    return result;
+  } catch (e) {
+    log('Error disabling kiosk mode: $e');
+    return false;
+  }
+}
+
+Future<bool> isDeviceOwner() async {
+  try {
+    final bool result = await platform.invokeMethod('isDeviceOwner');
+    return result;
+  } catch (e) {
+    log('Error checking device owner status: $e');
+    return false;
+  }
+}
+
+Future<bool> isInKioskMode() async {
+  try {
+    final bool result = await platform.invokeMethod('isInKioskMode');
+    return result;
+  } catch (e) {
+    log('Error checking kiosk mode status: $e');
+    return false;
+  }
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +55,32 @@ void main() {
   // Set the app to fullscreen mode
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   
+  // Enable kiosk mode automatically if device owner
+  _initializeKioskMode();
+  
   runApp(const KioskBrowserApp());
+}
+
+Future<void> _initializeKioskMode() async {
+  try {
+    // Check if app is device owner
+    final bool isOwner = await isDeviceOwner();
+    log('Device Owner status: $isOwner');
+    
+    if (isOwner) {
+      // Check if already in kiosk mode
+      final bool inKiosk = await isInKioskMode();
+      log('Already in kiosk mode: $inKiosk');
+      
+      if (!inKiosk) {
+        // Enable kiosk mode
+        final bool success = await enableKioskMode();
+        log('Kiosk mode enabled: $success');
+      }
+    }
+  } catch (e) {
+    log('Error initializing kiosk mode: $e');
+  }
 }
 
 class KioskBrowserApp extends StatefulWidget {
@@ -232,7 +298,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
     log('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl, launchedFromShortcut: $_launchedFromShortcut');
     return MaterialApp(
       navigatorKey: _navigatorKey,
-      title: 'WebKiosk Builder',
+      title: 'DeviceGate',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.blue,

@@ -1,0 +1,483 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/logger.dart';
+import '../models/shortcut_item.dart';
+import '../widgets/battery_indicator.dart';
+import 'add_shortcut_screen.dart';
+import 'add_apps_screen.dart';
+import 'network_status_screen.dart';
+import 'info_screen.dart';
+
+class SettingsScreen extends StatefulWidget {
+  final List<ShortcutItem> currentShortcuts;
+  
+  const SettingsScreen({super.key, required this.currentShortcuts});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  static const platform = MethodChannel('devicegate.app/shortcut');
+  String _appVersion = '';
+  String _deviceName = 'DeviceGate';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppVersion();
+    _loadDeviceName();
+  }
+
+  Future<void> _loadDeviceName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _deviceName = prefs.getString('device_name') ?? 'DeviceGate';
+      });
+    } catch (e) {
+      log('Error loading device name: $e');
+    }
+  }
+
+  Future<void> _saveDeviceName(String name) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('device_name', name);
+      setState(() {
+        _deviceName = name;
+      });
+    } catch (e) {
+      log('Error saving device name: $e');
+    }
+  }
+
+  void _showDeviceNameDialog() {
+    final controller = TextEditingController(text: _deviceName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: const EdgeInsets.all(24),
+        content: SizedBox(
+          width: 500,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Left column: Title and text field
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Device Name',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      decoration: const InputDecoration(
+                        labelText: 'Device Name',
+                        hintText: 'Enter device name',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLength: 30,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Right column: Buttons
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      controller.clear();
+                    },
+                    child: const Text('Clear'),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () {
+                      if (controller.text.isNotEmpty) {
+                        _saveDeviceName(controller.text.trim());
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showChangePasswordDialog() {
+    final controller = TextEditingController();
+    final confirmController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: const EdgeInsets.all(24),
+        content: SizedBox(
+          width: 500,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Change Password',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'New Password (6 digits)',
+                  hintText: 'Enter 6-digit code',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                obscureText: true,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm Password',
+                  hintText: 'Re-enter 6-digit code',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                obscureText: true,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final newPassword = controller.text.trim();
+                      final confirmPassword = confirmController.text.trim();
+                      
+                      if (newPassword.isEmpty || confirmPassword.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please enter password'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                      
+                      if (newPassword.length != 6 || !RegExp(r'^\d+$').hasMatch(newPassword)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Password must be 6 digits'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                      
+                      if (newPassword != confirmPassword) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Passwords do not match'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                      
+                      try {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setString('settings_password', newPassword);
+                        if (mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password changed successfully'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        log('Error saving password: $e');
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Error saving password'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      setState(() {
+        _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
+      });
+    } catch (e) {
+      log('Error fetching app version: $e');
+      setState(() {
+        _appVersion = 'Unknown';
+      });
+    }
+  }
+
+  void _exitToHome() async {
+    try {
+      await platform.invokeMethod('exitToHome');
+    } catch (e) {
+      log('Error exiting to home: $e');
+      SystemNavigator.pop();
+    }
+  }
+
+  void _removeDeviceOwner() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Device Owner?'),
+        content: const Text(
+          'This will remove Device Owner status and allow factory reset.\n\n'
+          'The device will no longer be in kiosk mode.\n\n'
+          'Are you sure you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Remove', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final success = await platform.invokeMethod('removeDeviceOwner');
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Device Owner removed. You can now factory reset.'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to remove Device Owner'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        log('Error removing device owner: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          _deviceName,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: const [
+          BatteryIndicator(),
+        ],
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Settings header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            color: Colors.grey[100],
+            child: const Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+          // Settings list
+          Expanded(
+            child: ListView(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.devices, color: Colors.blue),
+                  title: const Text('Device Name'),
+                  subtitle: Text(_deviceName),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showDeviceNameDialog,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.info, color: Colors.blue),
+                  title: const Text('Info'),
+                  subtitle: const Text('App and device information'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => InfoScreen(
+                          appVersion: _appVersion,
+                          deviceName: _deviceName,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.lock, color: Colors.blue),
+                  title: const Text('Change Password'),
+                  subtitle: const Text('Modify settings access code'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showChangePasswordDialog,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.add, color: Colors.blue),
+                  title: const Text('Add Shortcut'),
+                  subtitle: const Text('Add a new web shortcut'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    final shortcut = await Navigator.push<ShortcutItem>(
+                      context,
+                      MaterialPageRoute(builder: (context) => const AddShortcutScreen()),
+                    );
+                    if (shortcut != null && mounted) {
+                      Navigator.pop(context, shortcut);
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.android, color: Colors.green),
+                  title: const Text('Add Apps'),
+                  subtitle: const Text('Add installed Android apps'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    final changes = await Navigator.push<Map<String, Map<String, dynamic>>>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AddAppsScreen(currentShortcuts: widget.currentShortcuts),
+                      ),
+                    );
+                    if (changes != null && mounted) {
+                      Navigator.pop(context, changes);
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.wifi, color: Colors.blue),
+                  title: const Text('Network'),
+                  subtitle: const Text('View network status and settings'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NetworkStatusScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.exit_to_app, color: Colors.orange),
+                  title: const Text('Exit to Home'),
+                  subtitle: const Text('Return to native Android home'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _exitToHome();
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_outlined, color: Colors.red),
+                  title: const Text('Remove Device Owner'),
+                  subtitle: const Text('Allow factory reset (removes kiosk mode)'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _removeDeviceOwner,
+                ),
+                const Divider(height: 1),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

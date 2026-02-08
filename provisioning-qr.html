@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeviceGate QR Code Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2196F3;
+            text-align: center;
+        }
+        #qrcode {
+            display: flex;
+            justify-content: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: white;
+        }
+        .json-display {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            word-wrap: break-word;
+            margin: 20px 0;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: block;
+            margin: 20px auto;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DeviceGate Provisioning QR Code</h1>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Factory reset your device</li>
+                <li>Connect to WiFi during setup</li>
+                <li>Tap 6 times on the screen to open QR scanner</li>
+                <li>Scan this QR code displayed on this screen</li>
+            </ol>
+        </div>
+
+        <div id="qrcode"></div>
+        
+        <button onclick="downloadQR()">Download QR Code</button>
+        
+        <h3>Provisioning Data:</h3>
+        <div class="json-display" id="jsonData"></div>
+    </div>
+
+    <script>
+        // Provisioning configuration - Complete parameters with package name explicitly set
+        const provisioningData = {
+            "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.devicegate.app/.MyDeviceAdminReceiver",
+            "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME": "com.devicegate.app",
+            "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://github.com/Virgile1105/DeviceGate/releases/download/v1.0.1/app-release.apk",
+            "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "sOh7ZF2S7ejd5MKS0-Fe7Yk63-YDjb79W1eie1YFkSg",
+            "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
+            "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true
+        };
+
+        // Convert to JSON string
+        const jsonString = JSON.stringify(provisioningData);
+        
+        // Display JSON
+        document.getElementById('jsonData').textContent = jsonString;
+
+        // Generate QR Code
+        new QRCode(document.getElementById("qrcode"), {
+            text: jsonString,
+            width: 512,
+            height: 512,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+
+        // Download QR code function
+        function downloadQR() {
+            const canvas = document.querySelector('#qrcode canvas');
+            const url = canvas.toDataURL("image/png");
+            const link = document.createElement('a');
+            link.download = 'devicegate-provisioning-qr.png';
+            link.href = url;
+            link.click();
+        }
+    </script>
+</body>
+</html>
