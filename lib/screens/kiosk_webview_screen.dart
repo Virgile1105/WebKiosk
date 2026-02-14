@@ -201,12 +201,17 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   /// Disables system keyboards at device owner level (cleaner than JavaScript workarounds)
   Future<void> _disableSystemKeyboards() async {
     try {
+      // First, disable all system keyboards at device level
       final result = await platform.invokeMethod('disableSystemKeyboards');
       if (result == true) {
         log('System keyboards disabled successfully via device owner');
       } else {
         log('Failed to disable system keyboards (not device owner?)');
       }
+      
+      // Then, aggressively hide IME at window level
+      await platform.invokeMethod('hideImeAggressively');
+      log('IME hidden aggressively at window level');
     } catch (e) {
       log('Error disabling system keyboards: $e');
     }
@@ -215,6 +220,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
   /// Re-enables system keyboards
   Future<void> _enableSystemKeyboards() async {
     try {
+      // First, restore IME default behavior
+      await platform.invokeMethod('restoreImeDefault');
+      log('IME behavior restored to default');
+      
+      // Then, re-enable system keyboards at device level
       final result = await platform.invokeMethod('enableSystemKeyboards');
       if (result == true) {
         log('System keyboards enabled successfully');

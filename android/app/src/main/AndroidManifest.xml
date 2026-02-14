@@ -78,6 +78,20 @@
             android:enabled="true"
             android:exported="false" />
         
+        <!-- Empty Keyboard IME Service - Replaces Gboard with invisible keyboard -->
+        <service
+            android:name=".EmptyKeyboardService"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true"
+            android:label="DeviceGate Keyboard">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+        
         <!-- Android 12+ Provisioning Mode Activity -->
         <activity
             android:name=".ProvisioningModeActivity"

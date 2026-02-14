@@ -219,6 +219,24 @@ class MainActivity : FlutterActivity() {
                         result.error("KEYBOARD_ERROR", e.message, null)
                     }
                 }
+                "hideImeAggressively" -> {
+                    try {
+                        hideImeAggressively()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error hiding IME aggressively", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "restoreImeDefault" -> {
+                    try {
+                        restoreImeDefault()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error restoring IME default", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
                 "clearDeviceOwner" -> {
                     try {
                         val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -853,15 +871,15 @@ class MainActivity : FlutterActivity() {
     }
     
     /**
-     * Disables all system keyboards (IMEs) when custom keyboard is in use.
-     * This is a cleaner solution than JavaScript workarounds.
+     * Sets the empty IME as the only permitted keyboard.
+     * This replaces all system keyboards (including Gboard) with our invisible IME.
      * Only works when app is device owner.
      */
     private fun disableSystemKeyboards(): Boolean {
         initDevicePolicyManager()
         
         if (!isDeviceOwner()) {
-            Log.w(TAG, "Not a device owner, cannot disable system keyboards")
+            Log.w(TAG, "Not a device owner, cannot set empty keyboard")
             return false
         }
         
@@ -870,20 +888,21 @@ class MainActivity : FlutterActivity() {
             val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             val enabledImes = inputMethodManager.enabledInputMethodList
             
-            // Save current IMEs before disabling
+            // Save current IMEs before changing
             val imeIds = enabledImes.map { it.id }
             val prefs = getSharedPreferences("DeviceGatePrefs", Context.MODE_PRIVATE)
             prefs.edit().putStringSet("savedSystemKeyboards", imeIds.toSet()).apply()
             
             Log.d(TAG, "Found ${imeIds.size} system keyboards: $imeIds")
             
-            // Set permitted input methods to empty list (disables all keyboards)
-            devicePolicyManager?.setPermittedInputMethods(adminComponent!!, emptyList())
+            // Set permitted input methods to ONLY our empty keyboard
+            val emptyImeId = "${packageName}/.EmptyKeyboardService"
+            devicePolicyManager?.setPermittedInputMethods(adminComponent!!, listOf(emptyImeId))
             
-            Log.d(TAG, "System keyboards disabled successfully")
+            Log.d(TAG, "Empty keyboard set as only permitted IME: $emptyImeId")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Error disabling system keyboards", e)
+            Log.e(TAG, "Error setting empty keyboard", e)
             return false
         }
     }
@@ -909,6 +928,110 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error enabling system keyboards", e)
             return false
+        }
+    }
+
+    /**
+     * Aggressively switches to empty IME and hides IME navigation bar.
+     * Uses multiple techniques to ensure the IME bar doesn't show:
+     * 1. Force enables our empty keyboard if not enabled
+     * 2. Force switches to our empty keyboard
+     * 3. Sets aggressive window flags to prevent IME bar
+     */
+    private fun hideImeAggressively() {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val emptyImeId = "${packageName}/.EmptyKeyboardService"
+            
+            // Check if our empty IME is enabled
+            val enabledImes = imm.enabledInputMethodList
+            val isEmptyImeEnabled = enabledImes.any { it.id == emptyImeId }
+            
+            if (!isEmptyImeEnabled) {
+                Log.d(TAG, "Empty IME not enabled yet - user needs to enable it in settings")
+                // Try to open IME settings to let user enable it
+                try {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not open IME settings", e)
+                }
+            } else {
+                Log.d(TAG, "Empty IME is enabled")
+            }
+            
+            // Force switch to our empty keyboard using reflection (requires system permissions or device owner)
+            try {
+                // Method 1: Try using hidden setInputMethod API
+                val setInputMethodMethod = imm.javaClass.getMethod(
+                    "setInputMethod",
+                    android.os.IBinder::class.java,
+                    String::class.java
+                )
+                window?.decorView?.windowToken?.let { token ->
+                    setInputMethodMethod.invoke(imm, token, emptyImeId)
+                    Log.d(TAG, "Switched to empty IME using setInputMethod")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "setInputMethod not available: ${e.message}")
+                
+                // Method 2: Try using setInputMethodAndSubtype
+                try {
+                    val inputMethodInfo = enabledImes.find { it.id == emptyImeId }
+                    if (inputMethodInfo != null) {
+                        val setInputMethodAndSubtypeMethod = imm.javaClass.getMethod(
+                            "setInputMethodAndSubtype",
+                            android.os.IBinder::class.java,
+                            String::class.java,
+                            android.view.inputmethod.InputMethodSubtype::class.java
+                        )
+                        window?.decorView?.windowToken?.let { token ->
+                            setInputMethodAndSubtypeMethod.invoke(imm, token, emptyImeId, null)
+                            Log.d(TAG, "Switched to empty IME using setInputMethodAndSubtype")
+                        }
+                    }
+                } catch (e2: Exception) {
+                    Log.d(TAG, "setInputMethodAndSubtype not available: ${e2.message}")
+                }
+            }
+            
+            // VERY AGGRESSIVE: Set multiple window flags to prevent IME bar
+            window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+            
+            // Additional aggressive flag: Add FLAG_ALT_FOCUSABLE_IM to prevent IME bar
+            // This was the "very aggressive" flag that worked before
+            window?.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+            )
+            
+            Log.d(TAG, "Empty IME activated with very aggressive IME bar hiding (FLAG_ALT_FOCUSABLE_IM)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting empty IME", e)
+        }
+    }
+
+    /**
+     * Restores default IME behavior and removes aggressive flags
+     */
+    private fun restoreImeDefault() {
+        try {
+            // Remove FLAG_ALT_FOCUSABLE_IM
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            
+            // Restore default soft input mode
+            window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED or
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+            
+            Log.d(TAG, "IME restored to default behavior, aggressive flags removed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring IME default", e)
         }
     }
 
