@@ -36,7 +36,7 @@ class KioskWebViewScreen extends StatefulWidget {
   State<KioskWebViewScreen> createState() => _KioskWebViewScreenState();
 }
 
-class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
+class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBindingObserver {
   late final WebViewController _controller;
   String _currentUrl = '';
   String _websiteName = '';
@@ -195,13 +195,72 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
     // If custom keyboard is enabled, disable system keyboards at device level
     if (_useCustomKeyboardRuntime) {
       _disableSystemKeyboards();
+      
+      // Aggressive keyboard reset: retry multiple times to ensure it sticks
+      // This helps when returning from settings where native keyboard was active
+      _startAggressiveKeyboardReset();
+    }
+    
+    // Add observer to detect when screen comes back into view
+    WidgetsBinding.instance.addObserver(this);
+  }
+  
+  /// Aggressively resets keyboard state multiple times on initialization
+  /// This ensures the keyboard settings stick even after native keyboard was used
+  void _startAggressiveKeyboardReset() {
+    // Reset immediately
+    _disableSystemKeyboards();
+    
+    // Reset again after 500ms (after webview starts loading)
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted && _useCustomKeyboardRuntime) {
+        log('Aggressive keyboard reset: 500ms delay');
+        _disableSystemKeyboards();
+      }
+    });
+    
+    // Reset again after 1500ms (after page might have loaded)
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted && _useCustomKeyboardRuntime) {
+        log('Aggressive keyboard reset: 1500ms delay');
+        _disableSystemKeyboards();
+      }
+    });
+    
+    // Reset again after 3000ms (final safety net)
+    Future.delayed(const Duration(milliseconds: 3000), () {
+      if (mounted && _useCustomKeyboardRuntime) {
+        log('Aggressive keyboard reset: 3000ms delay - final');
+        _disableSystemKeyboards();
+      }
+    });
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    log('App lifecycle state changed to: $state');
+    
+    // When app comes back to foreground (resumed), re-apply keyboard settings
+    if (state == AppLifecycleState.resumed && _useCustomKeyboardRuntime && mounted) {
+      log('App resumed, re-applying keyboard settings');
+      Future.delayed(const Duration(milliseconds: 300), () async {
+        if (mounted && _useCustomKeyboardRuntime) {
+          await _disableSystemKeyboards();
+          await _resetAndReapplyCustomKeyboard();
+        }
+      });
     }
   }
   
   /// Disables system keyboards at device owner level (cleaner than JavaScript workarounds)
   Future<void> _disableSystemKeyboards() async {
     try {
-      // First, disable all system keyboards at device level
+      // First, force hide any currently active keyboard
+      await platform.invokeMethod('forceHideKeyboard');
+      log('Force hid any active keyboards');
+      
+      // Then, disable all system keyboards at device level (if device owner)
       final result = await platform.invokeMethod('disableSystemKeyboards');
       if (result == true) {
         log('System keyboards disabled successfully via device owner');
@@ -209,7 +268,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         log('Failed to disable system keyboards (not device owner?)');
       }
       
-      // Then, aggressively hide IME at window level
+      // Finally, aggressively hide IME at window level
       await platform.invokeMethod('hideImeAggressively');
       log('IME hidden aggressively at window level');
     } catch (e) {
@@ -369,6 +428,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
         'showCustomKeyboard',
         onMessageReceived: (JavaScriptMessage message) {
           log('Custom keyboard: SHOW received - ${message.message}');
+          
+          // Re-disable system keyboards whenever custom keyboard is shown
+          // This prevents native keyboard from interfering
+          if (_useCustomKeyboardRuntime) {
+            _disableSystemKeyboards();
+          }
+          
           setState(() {
             _showCustomKeyboard = true;
           });
@@ -436,6 +502,15 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> {
               // Set up custom keyboard after page loads
               if (_useCustomKeyboardRuntime) {
                 _setupCustomKeyboard();
+                
+                // Re-disable system keyboards after custom keyboard setup
+                // This ensures no native keyboard interference after page load
+                Future.delayed(const Duration(milliseconds: 200), () {
+                  if (mounted && _useCustomKeyboardRuntime) {
+                    log('Re-disabling system keyboards after page load');
+                    _disableSystemKeyboards();
+                  }
+                });
               }
             }
           },
@@ -1847,8 +1922,32 @@ Widget _buildSavedNetworkItem(dynamic network) {
     );
   }
 
-  void _showWebViewSettings() {
-    Navigator.push(
+  /// Reset JavaScript keyboard setup flag and re-apply custom keyboard
+  /// This is called when returning from settings to ensure keyboard works properly
+  Future<void> _resetAndReapplyCustomKeyboard() async {
+    log('Resetting and re-applying custom keyboard');
+    try {
+      // First, reset the JavaScript flag to allow re-initialization
+      await _controller.runJavaScript('''
+        console.log('Resetting custom keyboard setup flag');
+        window.customKeyboardSetup = false;
+        window.inputListenersSetup = false;
+      ''');
+      
+      // Wait a brief moment for the flag reset to take effect
+      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Then, re-setup the custom keyboard
+      _setupCustomKeyboard();
+      
+      log('Custom keyboard reset and re-applied successfully');
+    } catch (e) {
+      log('Error resetting custom keyboard: $e');
+    }
+  }
+
+  void _showWebViewSettings() async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => WebViewSettingsScreen(
@@ -1870,6 +1969,16 @@ Widget _buildSavedNetworkItem(dynamic network) {
         ),
       ),
     );
+    
+    // When returning from settings, re-apply keyboard configurations
+    log('Returned from settings, re-applying keyboard configurations');
+    if (_useCustomKeyboardRuntime && mounted) {
+      // Re-disable system keyboards
+      await _disableSystemKeyboards();
+      
+      // Reset the JavaScript keyboard setup to allow re-initialization
+      await _resetAndReapplyCustomKeyboard();
+    }
   }
 
   void _reloadPage() {
@@ -4136,8 +4245,10 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   @override
-  @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
+    
     // Re-enable system keyboards when leaving the screen
     if (_useCustomKeyboardRuntime) {
       _enableSystemKeyboards();

@@ -228,6 +228,15 @@ class MainActivity : FlutterActivity() {
                         result.error("IME_ERROR", e.message, null)
                     }
                 }
+                "forceHideKeyboard" -> {
+                    try {
+                        forceHideKeyboard()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error force hiding keyboard", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
                 "restoreImeDefault" -> {
                     try {
                         restoreImeDefault()
@@ -1032,6 +1041,56 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "IME restored to default behavior, aggressive flags removed")
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring IME default", e)
+        }
+    }
+
+    /**
+     * Force hides any active keyboard and resets IME connection state.
+     * This works even without device owner by directly manipulating the InputMethodManager.
+     */
+    private fun forceHideKeyboard() {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            
+            // Hide soft input from window token
+            window?.decorView?.windowToken?.let { token ->
+                imm.hideSoftInputFromWindow(token, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
+                Log.d(TAG, "Force hid keyboard via hideSoftInputFromWindow")
+            }
+            
+            // Also try hiding from current focus
+            currentFocus?.windowToken?.let { token ->
+                imm.hideSoftInputFromWindow(token, 0)
+                Log.d(TAG, "Force hid keyboard from current focus")
+            }
+            
+            // Restart input to clear any stale IME connections
+            try {
+                val restartInputMethod = imm.javaClass.getMethod("restartInput", android.view.View::class.java)
+                currentFocus?.let { view ->
+                    restartInputMethod.invoke(imm, view)
+                    Log.d(TAG, "Restarted input connection")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Could not restart input: ${e.message}")
+            }
+            
+            // Clear any active input connection
+            try {
+                val isActiveMethod = imm.javaClass.getMethod("isActive")
+                val isActive = isActiveMethod.invoke(imm) as Boolean
+                if (isActive) {
+                    val finishMethod = imm.javaClass.getMethod("finishInput")
+                    finishMethod.invoke(imm)
+                    Log.d(TAG, "Finished active input connection")
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Could not finish input: ${e.message}")
+            }
+            
+            Log.d(TAG, "Force keyboard hide completed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error force hiding keyboard", e)
         }
     }
 
