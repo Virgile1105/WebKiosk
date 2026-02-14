@@ -13,7 +13,6 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
-import android.os.BatteryManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,14 +30,16 @@ import java.net.URL
 import android.net.wifi.WifiManager
 import kotlin.math.min
 import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
-    private val BATTERY_CHANNEL = "devicegate.app/battery"
     private val TAG = "DeviceGate"
     private var methodChannel: MethodChannel? = null
-    private var eventChannel: EventChannel? = null
-    private var batteryReceiver: BroadcastReceiver? = null
     private var pendingUrl: String? = null
     private var urlAlreadyRetrieved = false
     private var devicePolicyManager: DevicePolicyManager? = null
@@ -59,30 +60,55 @@ class MainActivity : FlutterActivity() {
                 Log.e(TAG, "Error clearing device owner via flag", e)
             }
         }
+        
+        // Auto-grant necessary permissions if device owner
+        grantRequiredPermissions()
+        
+        // Always ensure we're set as default home launcher on every startup
+        ensureDefaultHomeLauncher()
+    }
+    
+    private fun grantRequiredPermissions() {
+        try {
+            initDevicePolicyManager()
+            
+            if (!isDeviceOwner()) {
+                return
+            }
+            
+            // Auto-grant Bluetooth permissions for device info (Android 12+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    val currentState = devicePolicyManager?.getPermissionGrantState(
+                        adminComponent!!,
+                        packageName,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    )
+                    
+                    if (currentState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                        val granted = devicePolicyManager?.setPermissionGrantState(
+                            adminComponent!!,
+                            packageName,
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                        Log.i(TAG, "BLUETOOTH_CONNECT permission auto-granted on startup: $granted")
+                    } else {
+                        Log.d(TAG, "BLUETOOTH_CONNECT permission already granted")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error auto-granting BLUETOOTH_CONNECT permission", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in grantRequiredPermissions", e)
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-        
-        // Setup EventChannel for battery updates
-        eventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, BATTERY_CHANNEL)
-        eventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
-            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-                Log.i(TAG, "Battery stream listener attached")
-                batteryReceiver = createBatteryReceiver(events)
-                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-                registerReceiver(batteryReceiver, filter)
-                Log.i(TAG, "Battery receiver registered")
-            }
-            
-            override fun onCancel(arguments: Any?) {
-                Log.i(TAG, "Battery stream listener cancelled")
-                batteryReceiver?.let { unregisterReceiver(it) }
-                batteryReceiver = null
-            }
-        })
         
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -190,6 +216,16 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error launching app", e)
                         result.error("LAUNCH_ERROR", e.message, null)
+                    }
+                }
+                "updateLockTaskPackages" -> {
+                    val packages = call.argument<List<String>>("packages") ?: emptyList()
+                    try {
+                        val success = updateLockTaskPackages(packages)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating lock task packages", e)
+                        result.error("LOCK_TASK_ERROR", e.message, null)
                     }
                 }
                 "removeDeviceOwner" -> {
@@ -304,13 +340,50 @@ class MainActivity : FlutterActivity() {
                         result.error("KEYBOARD_ERROR", e.message, null)
                     }
                 }
-                "getBatteryLevel" -> {
+                "applySystemUiMode" -> {
                     try {
-                        val level = getBatteryLevel()
-                        result.success(level)
+                        val alwaysShowTopBar = call.argument<Boolean>("alwaysShowTopBar") ?: false
+                        applySystemUiMode(alwaysShowTopBar)
+                        result.success(true)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error getting battery level", e)
-                        result.error("BATTERY_ERROR", e.message, null)
+                        Log.e(TAG, "Error applying system UI mode", e)
+                        result.error("SYSTEM_UI_ERROR", e.message, null)
+                    }
+                }
+                "getDeviceModel" -> {
+                    try {
+                        val deviceModel = getDeviceModel()
+                        result.success(deviceModel)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting device model", e)
+                        result.error("DEVICE_MODEL_ERROR", e.message, null)
+                    }
+                }
+                "getBluetoothDevices" -> {
+                    try {
+                        val devices = getBluetoothDevices()
+                        result.success(devices)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting Bluetooth devices", e)
+                        result.error("BLUETOOTH_ERROR", e.message, null)
+                    }
+                }
+                "setAsDefaultHome" -> {
+                    try {
+                        setAsDefaultHome()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting as default home", e)
+                        result.error("HOME_ERROR", e.message, null)
+                    }
+                }
+                "clearDefaultHome" -> {
+                    try {
+                        clearDefaultHome()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error clearing default home", e)
+                        result.error("HOME_ERROR", e.message, null)
                     }
                 }
                 else -> {
@@ -363,6 +436,30 @@ class MainActivity : FlutterActivity() {
             // Set as default home once during initial setup
             setAsDefaultHome()
             
+            // Configure lock task features to show status bar in kiosk mode
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                devicePolicyManager?.setLockTaskFeatures(
+                    adminComponent!!,
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO
+                )
+                Log.d(TAG, "Lock task feature SYSTEM_INFO configured during setup")
+            }
+            
+            // Auto-grant Bluetooth permissions for device info
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    val permGranted = devicePolicyManager?.setPermissionGrantState(
+                        adminComponent!!,
+                        packageName,
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                    )
+                    Log.d(TAG, "BLUETOOTH_CONNECT permission grant state set: $permGranted")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error granting BLUETOOTH_CONNECT permission", e)
+                }
+            }
+            
             Log.d(TAG, "Device owner restrictions applied successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting up device owner restrictions", e)
@@ -384,6 +481,51 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error in onResume", e)
             }
+        }
+        
+        // Reapply system UI mode to maintain status bar transparency
+        reapplySystemUiMode()
+    }
+    
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Reapply system UI mode when window gains focus
+            reapplySystemUiMode()
+        }
+    }
+    
+    private fun reapplySystemUiMode() {
+        try {
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val alwaysShowTopBar = prefs.getBoolean("flutter.always_show_top_bar", false)
+            Log.i(TAG, "Reapplying system UI mode: alwaysShowTopBar=$alwaysShowTopBar")
+            applySystemUiMode(alwaysShowTopBar)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reapplying system UI mode", e)
+        }
+    }
+    
+    private fun ensureDefaultHomeLauncher() {
+        try {
+            initDevicePolicyManager()
+            
+            if (!isDeviceOwner()) {
+                return
+            }
+            
+            // Check user preference
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val setAsDefaultHome = prefs.getBoolean("flutter.set_as_default_home", true) // Default: true
+            
+            if (setAsDefaultHome) {
+                setAsDefaultHome()
+                Log.i(TAG, "Ensured DeviceGate is set as default home launcher")
+            } else {
+                Log.d(TAG, "Set as default home is disabled in preferences")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error ensuring default home launcher", e)
         }
     }
     
@@ -412,6 +554,24 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "Set as default home successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error setting as default home", e)
+        }
+    }
+    
+    private fun clearDefaultHome() {
+        try {
+            initDevicePolicyManager()
+            
+            if (!isDeviceOwner()) {
+                Log.w(TAG, "Not a device owner, cannot clear default home")
+                return
+            }
+            
+            // Clear persistent preferred home activity
+            devicePolicyManager?.clearPackagePersistentPreferredActivities(adminComponent!!, packageName)
+            
+            Log.d(TAG, "Cleared default home successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing default home", e)
         }
     }
 
@@ -641,6 +801,16 @@ class MainActivity : FlutterActivity() {
         }
         
         try {
+            // Configure lock task features to show status bar (battery, network, time)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                // Android 9+ (API 28+): Enable system info bar
+                devicePolicyManager?.setLockTaskFeatures(
+                    adminComponent!!,
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO
+                )
+                Log.d(TAG, "Lock task feature SYSTEM_INFO enabled - status bar will be visible")
+            }
+            
             // Set this app as the lock task package
             devicePolicyManager?.setLockTaskPackages(adminComponent!!, arrayOf(packageName))
             
@@ -875,6 +1045,29 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error launching app: $packageName", e)
+            false
+        }
+    }
+    
+    private fun updateLockTaskPackages(packages: List<String>): Boolean {
+        initDevicePolicyManager()
+        
+        if (!isDeviceOwner()) {
+            Log.w(TAG, "App is not a device owner, cannot update lock task packages")
+            return false
+        }
+        
+        return try {
+            // Always include DeviceGate app itself
+            val allPackages = mutableListOf(packageName)
+            allPackages.addAll(packages)
+            
+            Log.d(TAG, "Updating lock task packages: $allPackages")
+            devicePolicyManager?.setLockTaskPackages(adminComponent!!, allPackages.toTypedArray())
+            Log.d(TAG, "Lock task packages updated successfully")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating lock task packages", e)
             false
         }
     }
@@ -1744,52 +1937,276 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun createBatteryReceiver(events: EventChannel.EventSink?): BroadcastReceiver {
-        return object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                val status = intent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-                
-                val batteryPct = if (level >= 0 && scale > 0) {
-                    (level * 100 / scale.toFloat()).toInt()
-                } else {
-                    -1
-                }
-                
-                val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                               status == BatteryManager.BATTERY_STATUS_FULL
-                
-                Log.i(TAG, "Battery update: level=$batteryPct%, status=$status, isCharging=$isCharging")
-                
-                val batteryData = mapOf(
-                    "level" to batteryPct,
-                    "isCharging" to isCharging
-                )
-                
-                events?.success(batteryData)
-            }
-        }
+    private fun getDeviceModel(): Map<String, String> {
+        return mapOf(
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "device" to Build.DEVICE,
+            "product" to Build.PRODUCT
+        )
     }
 
-    private fun getBatteryLevel(): Map<String, Any> {
-        return try {
-            val batteryManager = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-            val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            val status = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
-            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || 
-                           status == BatteryManager.BATTERY_STATUS_FULL
+    private fun getBluetoothDevices(): List<Map<String, String>> {
+        val devicesList = mutableListOf<Map<String, String>>()
+        
+        try {
+            Log.i(TAG, "Getting Bluetooth devices - API Level: ${Build.VERSION.SDK_INT}")
             
-            mapOf(
-                "level" to level,
-                "isCharging" to isCharging
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+ - Check for BLUETOOTH_CONNECT permission
+                val hasBluetoothConnect = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "BLUETOOTH_CONNECT permission: ${if (hasBluetoothConnect) "GRANTED" else "DENIED"}")
+                
+                if (!hasBluetoothConnect) {
+                    Log.w(TAG, "BLUETOOTH_CONNECT permission not granted")
+                    return devicesList
+                }
+            } else {
+                // Pre-Android 12 - Check for basic Bluetooth permission
+                val hasBluetooth = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) == PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "BLUETOOTH permission: ${if (hasBluetooth) "GRANTED" else "DENIED"}")
+            }
+            
+            val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            if (bluetoothManager == null) {
+                Log.e(TAG, "BluetoothManager is null")
+                return devicesList
+            }
+            
+            val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
+            if (bluetoothAdapter == null) {
+                Log.e(TAG, "Bluetooth adapter not available")
+                return devicesList
+            }
+            
+            Log.i(TAG, "Bluetooth adapter state: ${bluetoothAdapter.state}, enabled: ${bluetoothAdapter.isEnabled}")
+            
+            if (!bluetoothAdapter.isEnabled) {
+                Log.w(TAG, "Bluetooth is not enabled")
+                return devicesList
+            }
+            
+            // Get list of connected devices across all profiles
+            val connectedDevices = mutableSetOf<String>()
+            
+            // Helper function to safely get connected devices for a profile
+            fun tryGetConnectedDevices(profile: Int, profileName: String) {
+                try {
+                    val devices = bluetoothManager.getConnectedDevices(profile)
+                    devices.forEach { device ->
+                        try {
+                            connectedDevices.add(device.address)
+                            Log.d(TAG, "Found connected device on $profileName: ${device.address}")
+                        } catch (e: SecurityException) {
+                            Log.w(TAG, "Security exception accessing device on $profileName")
+                        }
+                    }
+                } catch (e: IllegalArgumentException) {
+                    Log.d(TAG, "Profile $profileName not supported on this device")
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "Security exception for $profileName profile")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error getting connected devices for $profileName: ${e.message}")
+                }
+            }
+            
+            // Try to get connected devices from various profiles
+            tryGetConnectedDevices(android.bluetooth.BluetoothProfile.GATT, "GATT")
+            tryGetConnectedDevices(android.bluetooth.BluetoothProfile.A2DP, "A2DP")
+            tryGetConnectedDevices(android.bluetooth.BluetoothProfile.HEADSET, "HEADSET")
+            tryGetConnectedDevices(android.bluetooth.BluetoothProfile.GATT_SERVER, "GATT_SERVER")
+            
+            // HID_HOST profile for keyboards and mice (API 30+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                tryGetConnectedDevices(4, "HID_HOST") // BluetoothProfile.HID_HOST
+            }
+            
+            // HEARING_AID profile (API 28+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                tryGetConnectedDevices(android.bluetooth.BluetoothProfile.HEARING_AID, "HEARING_AID")
+            }
+            
+            // LE_AUDIO profile (API 33+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                tryGetConnectedDevices(22, "LE_AUDIO") // BluetoothProfile.LE_AUDIO
+            }
+            
+            Log.i(TAG, "Found ${connectedDevices.size} actively connected device addresses")
+            
+            // Get bonded (paired) devices
+            val bondedDevices: Set<BluetoothDevice>? = try {
+                bluetoothAdapter.bondedDevices
+            } catch (e: SecurityException) {
+                Log.e(TAG, "Security exception getting bonded devices: ${e.message}")
+                null
+            }
+            
+            if (bondedDevices == null) {
+                Log.w(TAG, "bondedDevices is null")
+                return devicesList
+            }
+            
+            Log.i(TAG, "Found ${bondedDevices.size} bonded devices")
+            
+            bondedDevices.forEach { device ->
+                try {
+                    val deviceInfo = mutableMapOf<String, String>()
+                    val name = try { device.name } catch (e: SecurityException) { null }
+                    val address = try { device.address } catch (e: SecurityException) { null }
+                    
+                    deviceInfo["name"] = name ?: "Unknown Device"
+                    deviceInfo["address"] = address ?: "Unknown"
+                    
+                    Log.d(TAG, "Device: ${deviceInfo["name"]} (${deviceInfo["address"]})")
+                    
+                    // Check if device is actively connected using reflection
+                    val isConnected = try {
+                        val method = device.javaClass.getMethod("isConnected")
+                        method.invoke(device) as? Boolean ?: false
+                    } catch (e: Exception) {
+                        // Fallback: check if device is in the connectedDevices set from profiles
+                        address?.let { connectedDevices.contains(it) } ?: false
+                    }
+                    
+                    deviceInfo["connected"] = if (isConnected) "Connected" else "Disconnected"
+                    Log.d(TAG, "  Connection status: ${deviceInfo["connected"]} (checked via reflection: $isConnected)")
+                    
+                    // Check bond state
+                    val bondState = when (device.bondState) {
+                        BluetoothDevice.BOND_BONDED -> "Paired"
+                        BluetoothDevice.BOND_BONDING -> "Pairing"
+                        BluetoothDevice.BOND_NONE -> "Not Paired"
+                        else -> "Unknown"
+                    }
+                    deviceInfo["bondState"] = bondState
+                    Log.d(TAG, "  Bond state: $bondState")
+                    
+                    // Try to determine device type
+                    val deviceClass = device.bluetoothClass
+                    val deviceType = when {
+                        deviceClass == null -> {
+                            Log.d(TAG, "  Device class is null")
+                            "Unknown"
+                        }
+                        deviceClass.majorDeviceClass == 0x0500 -> {
+                            // Peripheral devices - check minor class for specific type
+                            val deviceMinorClass = deviceClass.deviceClass and 0xFF
+                            when {
+                                deviceMinorClass and 0x40 != 0 -> {
+                                    Log.d(TAG, "  Device class: 0x0500 minor 0x40 (Keyboard)")
+                                    "Keyboard"
+                                }
+                                deviceMinorClass and 0x80 != 0 -> {
+                                    Log.d(TAG, "  Device class: 0x0500 minor 0x80 (Pointing Device)")
+                                    "Mouse"
+                                }
+                                deviceMinorClass and 0x10 != 0 -> {
+                                    Log.d(TAG, "  Device class: 0x0500 minor 0x10 (Scanner/Remote)")
+                                    "Scanner"
+                                }
+                                else -> {
+                                    Log.d(TAG, "  Device class: 0x0500 minor 0x${deviceMinorClass.toString(16)} (Peripheral)")
+                                    "Peripheral"
+                                }
+                            }
+                        }
+                        deviceClass.majorDeviceClass == 0x0400 -> {
+                            Log.d(TAG, "  Device class: 0x0400 (Audio)")
+                            "Audio"
+                        }
+                        deviceClass.majorDeviceClass == 0x0200 -> {
+                            Log.d(TAG, "  Device class: 0x0200 (Phone)")
+                            "Phone"
+                        }
+                        deviceClass.majorDeviceClass == 0x0100 -> {
+                            Log.d(TAG, "  Device class: 0x0100 (Computer)")
+                            "Computer"
+                        }
+                        else -> {
+                            Log.d(TAG, "  Device class: 0x${deviceClass.majorDeviceClass.toString(16)} (Other)")
+                            "Other"
+                        }
+                    }
+                    deviceInfo["type"] = deviceType
+                    
+                    devicesList.add(deviceInfo)
+                    Log.i(TAG, "Added device: ${deviceInfo["name"]} - ${deviceInfo["type"]} - ${deviceInfo["connected"]}")
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "Security exception accessing device: ${e.message}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Exception accessing device: ${e.message}", e)
+                }
+            }
+            
+            Log.i(TAG, "Returning ${devicesList.size} Bluetooth devices")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception in getBluetoothDevices", e)
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting battery level", e)
-            mapOf(
-                "level" to -1,
-                "isCharging" to false
-            )
+            Log.e(TAG, "Error getting Bluetooth devices", e)
+        }
+        
+        return devicesList
+    }
+
+    private fun applySystemUiMode(alwaysShowTopBar: Boolean) {
+        try {
+            window?.decorView?.let { decorView ->
+                // Set status bar color based on mode
+                if (alwaysShowTopBar) {
+                    // Semi-transparent dark background for status bar
+                    window?.statusBarColor = 0x88000000.toInt() // 53% opacity black
+                } else {
+                    // Fully transparent when hidden
+                    window?.statusBarColor = 0x00000000.toInt()
+                }
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Android 11+ (API 30+) - Use WindowInsetsController
+                    window?.setDecorFitsSystemWindows(false)
+                    window?.insetsController?.let { controller ->
+                        if (alwaysShowTopBar) {
+                            // Show status bar, hide navigation bar with sticky immersive
+                            controller.show(android.view.WindowInsets.Type.statusBars())
+                            controller.hide(android.view.WindowInsets.Type.navigationBars())
+                            controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            // Set light icons on dark background
+                            controller.setSystemBarsAppearance(
+                                0,
+                                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                            )
+                        } else {
+                            // Hide both bars with sticky immersive
+                            controller.hide(android.view.WindowInsets.Type.systemBars())
+                            controller.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        }
+                    }
+                } else {
+                    // Android 10 and below - Use system UI flags
+                    var flags = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+                    
+                    if (alwaysShowTopBar) {
+                        // Hide navigation bar with immersive sticky, keep status bar visible
+                        // Remove light status bar flag to show light icons on dark background
+                        flags = flags or 
+                                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    } else {
+                        // Hide both bars with immersive sticky
+                        flags = flags or
+                                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    }
+                    
+                    decorView.systemUiVisibility = flags
+                }
+                
+                Log.i(TAG, "Applied system UI mode: alwaysShowTopBar=$alwaysShowTopBar")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying system UI mode", e)
         }
     }
 }

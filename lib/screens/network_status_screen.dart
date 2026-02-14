@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../utils/logger.dart';
-import '../widgets/battery_indicator.dart';
 
 class NetworkStatusScreen extends StatefulWidget {
   const NetworkStatusScreen({super.key});
@@ -582,9 +581,6 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: const [
-          BatteryIndicator(),
-        ],
       ),
       body: _wifiInfo == null
           ? const Center(child: CircularProgressIndicator())

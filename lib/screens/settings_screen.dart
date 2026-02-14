@@ -4,11 +4,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../models/shortcut_item.dart';
-import '../widgets/battery_indicator.dart';
 import 'add_shortcut_screen.dart';
 import 'add_apps_screen.dart';
 import 'network_status_screen.dart';
 import 'info_screen.dart';
+import 'configuration_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final List<ShortcutItem> currentShortcuts;
@@ -126,130 +126,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showChangePasswordDialog() {
-    final controller = TextEditingController();
-    final confirmController = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        contentPadding: const EdgeInsets.all(24),
-        content: SizedBox(
-          width: 500,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Change Password',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'New Password (6 digits)',
-                  hintText: 'Enter 6-digit code',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                obscureText: true,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: confirmController,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm Password',
-                  hintText: 'Re-enter 6-digit code',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                obscureText: true,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final newPassword = controller.text.trim();
-                      final confirmPassword = confirmController.text.trim();
-                      
-                      if (newPassword.isEmpty || confirmPassword.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please enter password'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-                      
-                      if (newPassword.length != 6 || !RegExp(r'^\d+$').hasMatch(newPassword)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Password must be 6 digits'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-                      
-                      if (newPassword != confirmPassword) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Passwords do not match'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-                      
-                      try {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setString('settings_password', newPassword);
-                        if (mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Password changed successfully'),
-                              backgroundColor: Colors.green,
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        log('Error saving password: $e');
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Error saving password'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: const Text('Save'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _loadAppVersion() async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
@@ -346,9 +222,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: const [
-          BatteryIndicator(),
-        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,11 +271,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.lock, color: Colors.blue),
-                  title: const Text('Change Password'),
-                  subtitle: const Text('Modify settings access code'),
+                  leading: const Icon(Icons.tune, color: Colors.blue),
+                  title: const Text('Configuration'),
+                  subtitle: const Text('Custom display and behavior settings'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: _showChangePasswordDialog,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ConfigurationScreen(),
+                      ),
+                    );
+                  },
                 ),
                 const Divider(height: 1),
                 ListTile(

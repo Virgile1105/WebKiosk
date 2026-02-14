@@ -49,11 +49,21 @@ Future<bool> isInKioskMode() async {
   }
 }
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Set the app to fullscreen mode
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  // Load user preference for top bar
+  final prefs = await SharedPreferences.getInstance();
+  final alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+  
+  // Apply system UI mode using native method for proper auto-hide behavior
+  try {
+    await platform.invokeMethod('applySystemUiMode', {
+      'alwaysShowTopBar': alwaysShowTopBar,
+    });
+  } catch (e) {
+    log('Error applying system UI mode on startup: $e');
+  }
   
   // Enable kiosk mode automatically if device owner
   _initializeKioskMode();

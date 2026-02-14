@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart';
-import '../widgets/battery_indicator.dart';
 
 class InfoScreen extends StatefulWidget {
   final String appVersion;
@@ -20,7 +19,9 @@ class InfoScreen extends StatefulWidget {
 class _InfoScreenState extends State<InfoScreen> {
   static const platform = MethodChannel('devicegate.app/shortcut');
   String _ipAddress = 'Loading...';
-  String _connectedDevice = 'None';
+  List<Map<String, dynamic>> _bluetoothDevices = [];
+  String _androidDeviceModel = 'Loading...';
+  bool _isLoadingBluetooth = true;
 
   @override
   void initState() {
@@ -49,21 +50,38 @@ class _InfoScreenState extends State<InfoScreen> {
         }
       }
 
-      // Check for connected devices (keyboard/scanner)
-      String connectedDevice = 'None';
+      // Get Bluetooth devices
+      List<Map<String, dynamic>> bluetoothDevices = [];
       try {
-        final hasKeyboard = await platform.invokeMethod('hasPhysicalKeyboard');
-        if (hasKeyboard == true) {
-          connectedDevice = 'Physical Keyboard / Scanner';
+        final devices = await platform.invokeMethod('getBluetoothDevices');
+        if (devices != null && devices is List) {
+          bluetoothDevices = devices.map((device) {
+            return Map<String, dynamic>.from(device as Map);
+          }).toList();
         }
       } catch (e) {
-        log('Error checking keyboard: $e');
+        log('Error getting Bluetooth devices: $e');
+      }
+
+      // Get Android device model
+      String androidDeviceModel = 'Not available';
+      try {
+        final deviceModel = await platform.invokeMethod('getDeviceModel');
+        if (deviceModel != null && deviceModel is Map) {
+          final manufacturer = deviceModel['manufacturer'] ?? '';
+          final model = deviceModel['model'] ?? '';
+          androidDeviceModel = '$manufacturer $model'.trim();
+        }
+      } catch (e) {
+        log('Error getting device model: $e');
       }
 
       if (mounted) {
         setState(() {
           _ipAddress = ipAddress;
-          _connectedDevice = connectedDevice;
+          _bluetoothDevices = bluetoothDevices;
+          _androidDeviceModel = androidDeviceModel;
+          _isLoadingBluetooth = false;
         });
       }
     } catch (e) {
@@ -71,7 +89,9 @@ class _InfoScreenState extends State<InfoScreen> {
       if (mounted) {
         setState(() {
           _ipAddress = 'Error loading';
-          _connectedDevice = 'Error checking';
+          _bluetoothDevices = [];
+          _androidDeviceModel = 'Error loading';
+          _isLoadingBluetooth = false;
         });
       }
     }
@@ -123,9 +143,6 @@ class _InfoScreenState extends State<InfoScreen> {
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        actions: const [
-          BatteryIndicator(),
-        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -153,9 +170,129 @@ class _InfoScreenState extends State<InfoScreen> {
             const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow('Device Name', widget.deviceName),
             const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildInfoRow('Android Device', _androidDeviceModel),
+            const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow('IP Address', _ipAddress),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow('Connected Device', _connectedDevice),
+            
+            // Bluetooth Devices Section
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 160,
+                        child: Text(
+                          'Bluetooth Devices',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: _isLoadingBluetooth
+                            ? const Text(
+                                'Loading...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black87,
+                                ),
+                              )
+                            : _bluetoothDevices.isEmpty
+                                ? const Text(
+                                    'None',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.black87,
+                                    ),
+                                  )
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: _bluetoothDevices.map((device) {
+                                      final name = device['name'] ?? 'Unknown';
+                                      final type = device['type'] ?? '';
+                                      final connected = device['connected'] ?? 'Unknown';
+                                      final isConnected = connected == 'Connected';
+                                      
+                                      // Determine icon based on type or device name
+                                      IconData deviceIcon;
+                                      final nameLower = name.toLowerCase();
+                                      if (nameLower.contains('scan') || nameLower.contains('barcode') || nameLower.contains('powerscan')) {
+                                        deviceIcon = Icons.document_scanner;
+                                      } else if (type == 'Keyboard') {
+                                        deviceIcon = Icons.keyboard;
+                                      } else if (type == 'Scanner') {
+                                        deviceIcon = Icons.document_scanner;
+                                      } else if (type == 'Mouse') {
+                                        deviceIcon = Icons.mouse;
+                                      } else if (type == 'Audio') {
+                                        deviceIcon = Icons.headphones;
+                                      } else {
+                                        deviceIcon = Icons.bluetooth;
+                                      }
+                                      
+                                      return Padding(
+                                        padding: const EdgeInsets.only(bottom: 8),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              deviceIcon,
+                                              size: 20,
+                                              color: isConnected ? Colors.green.shade700 : Colors.grey.shade500,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Text(
+                                                        name,
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          color: Colors.black87,
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 8),
+                                                      Container(
+                                                        width: 8,
+                                                        height: 8,
+                                                        decoration: BoxDecoration(
+                                                          shape: BoxShape.circle,
+                                                          color: isConnected ? Colors.green : Colors.grey,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  if (type.isNotEmpty)
+                                                    Text(
+                                                      '$type • $connected',
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
           ],
         ),

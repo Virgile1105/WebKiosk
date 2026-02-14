@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
-import '../widgets/battery_indicator.dart';
 import 'kiosk_webview_screen.dart';
 import 'settings_screen.dart';
 import 'password_dialog.dart';
@@ -26,11 +25,35 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   bool _isLoading = true;
   String _appVersion = '';
   String _deviceName = 'DeviceGate';
+  List<Map<String, dynamic>> _bluetoothDevices = [];
+  Timer? _bluetoothTimer;
+  Timer? _deviceRotationTimer;
+  int _currentDeviceIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadBluetoothDevices();
+    // Update Bluetooth status every 5 seconds
+    _bluetoothTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _loadBluetoothDevices();
+    });
+    // Rotate through devices every 3 seconds if multiple
+    _deviceRotationTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (_bluetoothDevices.length > 1) {
+        setState(() {
+          _currentDeviceIndex = (_currentDeviceIndex + 1) % _bluetoothDevices.length;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _bluetoothTimer?.cancel();
+    _deviceRotationTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -80,11 +103,44 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     }
     
     _shortcuts = shortcuts;
+    
+    // Update lock task packages with any app shortcuts
+    await _updateLockTaskPackages();
   }
 
   Future<void> _saveShortcuts() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('shortcuts', ShortcutItem.encodeList(_shortcuts));
+  }
+
+  Future<void> _updateLockTaskPackages() async {
+    try {
+      // Get all app package names from shortcuts
+      final appPackages = _shortcuts
+          .where((s) => s.url.startsWith('app://'))
+          .map((s) => s.url.substring(6))
+          .toList();
+      
+      await platform.invokeMethod('updateLockTaskPackages', {'packages': appPackages});
+      log('Updated lock task packages: $appPackages');
+    } catch (e) {
+      log('Error updating lock task packages: $e');
+    }
+  }
+
+  Future<void> _loadBluetoothDevices() async {
+    try {
+      final devices = await platform.invokeMethod('getBluetoothDevices');
+      if (mounted) {
+        setState(() {
+          _bluetoothDevices = (devices as List)
+              .map((device) => Map<String, dynamic>.from(device as Map))
+              .toList();
+        });
+      }
+    } catch (e) {
+      log('Error loading Bluetooth devices: $e');
+    }
   }
 
   Future<void> _loadAppVersion() async {
@@ -128,16 +184,16 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           setState(() {
             _shortcuts.add(result);
           });
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${result.name} added to home')),
+            );
+          }
+        } else if (result is Map<String, Map<String, dynamic>>) {
+          // Handle multiple app changes (from Add Apps)
+          await _handleAppChanges(result);
         }
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${result.name} added to home')),
-          );
-        }
-      } else if (result is Map<String, Map<String, dynamic>>) {
-        // Handle multiple app changes (from Add Apps)
-        await _handleAppChanges(result);
       }
     }
   }
@@ -175,6 +231,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     });
 
     await _saveShortcuts();
+    await _updateLockTaskPackages();
 
     if (mounted) {
       final message = <String>[];
@@ -656,8 +713,9 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         centerTitle: true,
         elevation: 0,
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
-        actions: const [
-          BatteryIndicator(),
+        actions: [
+          _buildBluetoothStatus(),
+          const SizedBox(width: 16),
         ],
       ),
       body: _isLoading
@@ -715,6 +773,87 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildBluetoothStatus() {
+    if (_bluetoothDevices.isEmpty) {
+      // No paired devices
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.bluetooth_disabled,
+            color: Colors.grey.shade400,
+            size: 20,
+          ),
+        ],
+      );
+    }
+
+    // Priority: Show only connected devices if any exist, otherwise show all paired devices
+    final connectedDevices = _bluetoothDevices
+        .where((device) => device['connected'] == 'Connected')
+        .toList();
+    
+    final devicesToShow = connectedDevices.isNotEmpty ? connectedDevices : _bluetoothDevices;
+    
+    // Get current device to display (rotating through filtered devices)
+    final device = devicesToShow[_currentDeviceIndex % devicesToShow.length];
+    final name = device['name'] ?? 'Unknown';
+    final type = device['type'] ?? '';
+    final connected = device['connected'] ?? 'Disconnected';
+    final isConnected = connected == 'Connected';
+    
+    // Determine icon based on type or device name
+    IconData deviceIcon;
+    // Check device name for scanner keywords
+    final nameLower = name.toLowerCase();
+    if (nameLower.contains('scan') || nameLower.contains('barcode') || nameLower.contains('powerscan')) {
+      deviceIcon = Icons.document_scanner;
+    } else if (type == 'Keyboard') {
+      deviceIcon = Icons.keyboard;
+    } else if (type == 'Scanner') {
+      deviceIcon = Icons.document_scanner;
+    } else if (type == 'Mouse') {
+      deviceIcon = Icons.mouse;
+    } else if (type == 'Audio') {
+      deviceIcon = Icons.headphones;
+    } else {
+      deviceIcon = Icons.bluetooth_connected;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          deviceIcon,
+          color: isConnected ? Colors.green.shade400 : Colors.grey.shade400,
+          size: 20,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            name,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+            ),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isConnected ? Colors.green.shade400 : Colors.grey.shade400,
+          ),
+        ),
+      ],
     );
   }
 
@@ -803,6 +942,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                           width: 64,
                           height: 64,
                           fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          cacheWidth: 128,
                           errorBuilder: (context, error, stackTrace) {
                             return Icon(
                               Icons.android,

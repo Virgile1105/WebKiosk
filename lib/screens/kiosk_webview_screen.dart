@@ -10,7 +10,6 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/logger.dart';
-import '../widgets/battery_indicator.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
 
@@ -1513,20 +1512,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
               ),
             ),
-
-          // Battery indicator in top-right corner
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color.fromRGBO(51, 61, 71, 0.9),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const BatteryIndicator(),
-            ),
-          ),
 
           // Custom keyboard
           if (_showCustomKeyboard && _useCustomKeyboardRuntime) ...[
