@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/shortcut_list_screen.dart';
 import 'screens/kiosk_webview_screen.dart';
+import 'screens/error_page.dart';
 import 'models/shortcut_item.dart';
 import 'utils/logger.dart';
 
 const MethodChannel platform = MethodChannel('devicegate.app/shortcut');
+
+// Global navigator key to access navigation from anywhere (including error handlers)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // Kiosk mode helper methods
 Future<bool> enableKioskMode() async {
@@ -50,25 +55,83 @@ Future<bool> isInKioskMode() async {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // Load user preference for top bar
-  final prefs = await SharedPreferences.getInstance();
-  final alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
-  
-  // Apply system UI mode using native method for proper auto-hide behavior
-  try {
-    await platform.invokeMethod('applySystemUiMode', {
-      'alwaysShowTopBar': alwaysShowTopBar,
+  // Set up global error handler for Flutter framework errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    log('Flutter Error: ${details.exception}');
+    log('Stack Trace: ${details.stack}');
+    FlutterError.presentError(details);
+  };
+
+  // Run app in guarded zone to catch all uncaught errors
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    try {
+      // Load user preference for top bar
+      final prefs = await SharedPreferences.getInstance();
+      final alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+      
+      // Apply system UI mode using native method for proper auto-hide behavior
+      try {
+        await platform.invokeMethod('applySystemUiMode', {
+          'alwaysShowTopBar': alwaysShowTopBar,
+        });
+      } catch (e) {
+        log('Error applying system UI mode on startup: $e');
+      }
+      
+      // Enable kiosk mode automatically if device owner
+      _initializeKioskMode();
+      
+      runApp(const KioskBrowserApp());
+    } catch (error, stackTrace) {
+      log('Critical error during app initialization: $error');
+      log('Stack trace: $stackTrace');
+      
+      // Show error page if initialization fails
+      runApp(
+        MaterialApp(
+          home: ErrorPage(
+            errorTitle: 'Erreur de démarrage',
+            errorMessage: 'L\'application n\'a pas pu démarrer correctement',
+            error: error,
+            stackTrace: stackTrace,
+            onReload: () {
+              // Attempt to restart the app
+              main();
+            },
+          ),
+        ),
+      );
+    }
+  }, (error, stackTrace) {
+    // Catch any uncaught errors in the entire app
+    log('Uncaught error: $error');
+    log('Stack trace: $stackTrace');
+    
+    // Navigate to ErrorPage for uncaught errors
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = navigatorKey.currentContext;
+      if (context != null && Navigator.canPop(context)) {
+        navigatorKey.currentState?.pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur non gérée',
+              errorMessage: 'Une erreur inattendue s\'est produite',
+              error: error,
+              stackTrace: stackTrace,
+              onReload: () {
+                navigatorKey.currentState?.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const ShortcutListScreen()),
+                  (route) => false,
+                );
+              },
+            ),
+          ),
+        );
+      }
     });
-  } catch (e) {
-    log('Error applying system UI mode on startup: $e');
-  }
-  
-  // Enable kiosk mode automatically if device owner
-  _initializeKioskMode();
-  
-  runApp(const KioskBrowserApp());
+  });
 }
 
 Future<void> _initializeKioskMode() async {
@@ -105,9 +168,9 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
   bool _disableAutoFocus = false;
   bool _useCustomKeyboard = false;
   bool _disableCopyPaste = false;
+  bool _enableWarningSound = false;
   bool _initialUrlCheckComplete = false;
   bool _launchedFromShortcut = false;
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -130,7 +193,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
           });
           // Push the shortcut list screen
           Future.microtask(() {
-            _navigatorKey.currentState?.pushAndRemoveUntil(
+            navigatorKey.currentState?.pushAndRemoveUntil(
               PageRouteBuilder(
                 pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
                 transitionDuration: Duration.zero,
@@ -172,18 +235,20 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
           _disableAutoFocus = settings['disableAutoFocus'] ?? false;
           _useCustomKeyboard = settings['useCustomKeyboard'] ?? false;
           _disableCopyPaste = settings['disableCopyPaste'] ?? false;
+          _enableWarningSound = settings['enableWarningSound'] ?? false;
           _initialUrlCheckComplete = true;
           _launchedFromShortcut = true;
         });
         // Push the webview screen
         Future.microtask(() {
-          _navigatorKey.currentState?.pushAndRemoveUntil(
+          navigatorKey.currentState?.pushAndRemoveUntil(
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) => KioskWebViewScreen(
                 initialUrl: _initialUrl!,
                 disableAutoFocus: _disableAutoFocus,
                 useCustomKeyboard: _useCustomKeyboard,
                 disableCopyPaste: _disableCopyPaste,
+                enableWarningSound: _enableWarningSound,
                 shortcutName: settings['shortcutName'],
                 shortcutIconUrl: settings['shortcutIconUrl'],
               ),
@@ -201,7 +266,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
         });
         // Push the shortcut list screen
         Future.microtask(() {
-          _navigatorKey.currentState?.pushAndRemoveUntil(
+          navigatorKey.currentState?.pushAndRemoveUntil(
             PageRouteBuilder(
               pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
               transitionDuration: Duration.zero,
@@ -219,7 +284,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
       });
       // Push the shortcut list screen on error
       Future.microtask(() {
-        _navigatorKey.currentState?.pushAndRemoveUntil(
+        navigatorKey.currentState?.pushAndRemoveUntil(
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) => const ShortcutListScreen(),
             transitionDuration: Duration.zero,
@@ -244,6 +309,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
             'disableAutoFocus': shortcut.disableAutoFocus,
             'useCustomKeyboard': shortcut.useCustomKeyboard,
             'disableCopyPaste': shortcut.disableCopyPaste,
+            'enableWarningSound': shortcut.enableWarningSound,
             'shortcutName': shortcut.name,
             'shortcutIconUrl': shortcut.iconUrl,
           };
@@ -256,6 +322,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
       'disableAutoFocus': false, 
       'useCustomKeyboard': false, 
       'disableCopyPaste': false,
+      'enableWarningSound': false,
       'shortcutName': null,
       'shortcutIconUrl': null,
     };
@@ -283,16 +350,18 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
       _disableAutoFocus = settings['disableAutoFocus'] ?? false;
       _useCustomKeyboard = settings['useCustomKeyboard'] ?? false;
       _disableCopyPaste = settings['disableCopyPaste'] ?? false;
+      _enableWarningSound = settings['enableWarningSound'] ?? false;
     });
     
     // Navigate to the new URL with correct settings, clearing all previous routes
-    _navigatorKey.currentState?.pushAndRemoveUntil(
+    navigatorKey.currentState?.pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => KioskWebViewScreen(
           initialUrl: url,
           disableAutoFocus: _disableAutoFocus,
           useCustomKeyboard: _useCustomKeyboard,
           disableCopyPaste: _disableCopyPaste,
+          enableWarningSound: _enableWarningSound,
           shortcutName: settings['shortcutName'],
           shortcutIconUrl: settings['shortcutIconUrl'],
         ),
@@ -307,7 +376,7 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
   Widget build(BuildContext context) {
     log('Building app - initialUrlCheckComplete: $_initialUrlCheckComplete, initialUrl: $_initialUrl, launchedFromShortcut: $_launchedFromShortcut');
     return MaterialApp(
-      navigatorKey: _navigatorKey,
+      navigatorKey: navigatorKey,
       title: 'DeviceGate',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

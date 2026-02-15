@@ -9,6 +9,7 @@ import 'add_apps_screen.dart';
 import 'network_status_screen.dart';
 import 'info_screen.dart';
 import 'configuration_screen.dart';
+import 'error_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   final List<ShortcutItem> currentShortcuts;
@@ -49,8 +50,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _deviceName = name;
       });
-    } catch (e) {
-      log('Error saving device name: $e');
+    } catch (error, stackTrace) {
+      log('Error saving device name: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de sauvegarde',
+              errorMessage: 'Impossible de sauvegarder le nom de l\'appareil',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _saveDeviceName(name);
+              },
+            ),
+          ),
+        );
+      }
     }
   }
 

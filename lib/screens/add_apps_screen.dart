@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/shortcut_item.dart';
+import 'error_page.dart';
 
 class AddAppsScreen extends StatefulWidget {
   final List<ShortcutItem> currentShortcuts;
@@ -37,13 +38,27 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
         _installedApps = result.map((item) => Map<String, dynamic>.from(item as Map)).toList();
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (error, stackTrace) {
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading apps: $e')),
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de chargement',
+              errorMessage: 'Impossible de charger les applications installées',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _isLoading = true;
+                });
+                _loadInstalledApps();
+              },
+            ),
+          ),
         );
       }
     }

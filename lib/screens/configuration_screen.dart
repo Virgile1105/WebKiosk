@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
+import 'error_page.dart';
 
 class ConfigurationScreen extends StatefulWidget {
   const ConfigurationScreen({super.key});
@@ -50,13 +51,22 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
       _applySystemUiMode(value);
       
 
-    } catch (e) {
-      log('Error saving top bar setting: $e');
+    } catch (error, stackTrace) {
+      log('Error saving top bar setting: $error');
+      log('Stack trace: $stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la sauvegarde'),
-            backgroundColor: Colors.red,
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de configuration',
+              errorMessage: 'Impossible de sauvegarder le paramètre de la barre supérieure',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _saveTopBarSetting(value);
+              },
+            ),
           ),
         );
       }
@@ -102,13 +112,22 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
       }
       
       log('Saved default home setting: $value');
-    } catch (e) {
-      log('Error saving default home setting: $e');
+    } catch (error, stackTrace) {
+      log('Error saving default home setting: $error');
+      log('Stack trace: $stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Erreur lors de la modification'),
-            backgroundColor: Colors.red,
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de configuration',
+              errorMessage: 'Impossible de modifier le paramètre d\'écran d\'accueil',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _saveDefaultHomeSetting(value);
+              },
+            ),
           ),
         );
       }

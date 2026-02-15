@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../utils/logger.dart';
+import 'error_page.dart';
 
 class NetworkStatusScreen extends StatefulWidget {
   const NetworkStatusScreen({super.key});
@@ -69,12 +70,29 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
           }
         });
       }
-    } catch (e) {
-      log('Error fetching WiFi info: $e');
+    } catch (error, stackTrace) {
+      log('Error fetching WiFi info: $error');
       if (mounted) {
         setState(() {
           _wifiInfo = {}; // Set empty map on error so we don't show spinner forever
         });
+        // Only navigate to error page for critical failures
+        if (_wifiInfo == null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ErrorPage(
+                errorTitle: 'Erreur réseau',
+                errorMessage: 'Impossible de récupérer les informations WiFi',
+                error: error,
+                stackTrace: stackTrace,
+                onRetry: () {
+                  Navigator.of(context).pop();
+                  _fetchWifiInfo();
+                },
+              ),
+            ),
+          );
+        }
       }
     }
   }
@@ -115,8 +133,9 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
           }
         });
       }
-    } catch (e) {
-      log('Error checking website status: $e');
+    } catch (error) {
+      log('Error checking website status: $error');
+      // Silent fail - not critical
     } finally {
       _isCheckingWebsite = false;
     }
@@ -141,19 +160,26 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
     try {
       // This just starts the test - results come via callback
       await platform.invokeMethod('testInternetSpeed');
-    } catch (e) {
-      log('Error testing internet speed: $e');
+    } catch (error) {
+      log('Error testing internet speed: $error');
       if (mounted) {
         setState(() {
           _speedTest = {
             'downloadSpeed': 0.0,
-            'error': e.toString(),
+            'error': error.toString(),
             'timestamp': DateTime.now().millisecondsSinceEpoch,
             'secondsAgo': 0,
             'isComplete': true,
           };
           _isTestingSpeed = false;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du test de vitesse: $error'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     }
   }
@@ -176,12 +202,12 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
       for (int i = 0; i < 40; i++) {
         await Future.delayed(const Duration(milliseconds: 50));
       }
-    } catch (e) {
-      log('Error resetting internet: $e');
+    } catch (error) {
+      log('Error resetting internet: $error');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Échec de la réinitialisation d\'Internet : $e'),
+            content: Text('Échec de la réinitialisation d\'Internet : $error'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),

@@ -8,6 +8,7 @@ class ShortcutItem {
   final bool disableAutoFocus;
   final bool useCustomKeyboard;
   final bool disableCopyPaste;
+  final bool enableWarningSound;
 
   ShortcutItem({
     required this.id,
@@ -17,6 +18,7 @@ class ShortcutItem {
     this.disableAutoFocus = false,
     this.useCustomKeyboard = false,
     this.disableCopyPaste = false,
+    this.enableWarningSound = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +29,7 @@ class ShortcutItem {
     'disableAutoFocus': disableAutoFocus,
     'useCustomKeyboard': useCustomKeyboard,
     'disableCopyPaste': disableCopyPaste,
+    'enableWarningSound': enableWarningSound,
   };
 
   factory ShortcutItem.fromJson(Map<String, dynamic> json) => ShortcutItem(
@@ -37,6 +40,7 @@ class ShortcutItem {
     disableAutoFocus: json['disableAutoFocus'] as bool? ?? false,
     useCustomKeyboard: json['useCustomKeyboard'] as bool? ?? false,
     disableCopyPaste: json['disableCopyPaste'] as bool? ?? false,
+    enableWarningSound: json['enableWarningSound'] as bool? ?? false,
   );
 
   static String encodeList(List<ShortcutItem> items) {

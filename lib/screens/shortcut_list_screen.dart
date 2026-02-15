@@ -10,6 +10,7 @@ import 'settings_screen.dart';
 import 'password_dialog.dart';
 import 'add_shortcut_screen.dart';
 import 'add_apps_screen.dart';
+import 'error_page.dart';
 import '../utils/logger.dart';
 
 class ShortcutListScreen extends StatefulWidget {
@@ -57,15 +58,43 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _loadData() async {
-    await Future.wait([
-      _loadShortcuts(),
-      _loadAppVersion(),
-      _loadDeviceName(),
-    ]);
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    try {
+      await Future.wait([
+        _loadShortcuts(),
+        _loadAppVersion(),
+        _loadDeviceName(),
+      ]);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (error, stackTrace) {
+      log('Critical error loading data: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        // Show error page for critical data loading failures
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de chargement',
+              errorMessage: 'Impossible de charger les données de l\'application',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _isLoading = true;
+                });
+                _loadData();
+              },
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -83,34 +112,56 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _loadShortcuts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final shortcutsJson = prefs.getString('shortcuts') ?? '';
-    final shortcuts = ShortcutItem.decodeList(shortcutsJson);
-    
-    // Add default SAP_EWM shortcut if no shortcuts exist
-    if (shortcuts.isEmpty) {
-      shortcuts.add(ShortcutItem(
-        id: 'sap_ewm_default',
-        name: 'SAP EWM',
-        url: 'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
-        iconUrl: 'assets/icon/SAP_EWM.png',
-        disableAutoFocus: false,
-        useCustomKeyboard: true,
-        disableCopyPaste: false,
-      ));
-      // Save the default shortcut
-      await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shortcutsJson = prefs.getString('shortcuts') ?? '';
+      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      
+      // Add default SAP_EWM shortcut if no shortcuts exist
+      if (shortcuts.isEmpty) {
+        shortcuts.add(ShortcutItem(
+          id: 'sap_ewm_default',
+          name: 'SAP EWM',
+          url: 'https://sapcrx102.inapa.group:44300/sap/bc/gui/sap/zcor_ewm01?sap-language=FR',
+          iconUrl: 'assets/icon/SAP_EWM.png',
+          disableAutoFocus: false,
+          useCustomKeyboard: true,
+          disableCopyPaste: false,
+        ));
+        // Save the default shortcut
+        await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+      }
+      
+      _shortcuts = shortcuts;
+      
+      // Update lock task packages with any app shortcuts
+      await _updateLockTaskPackages();
+    } catch (error, stackTrace) {
+      log('Error loading shortcuts: $error');
+      log('Stack trace: $stackTrace');
+      // Initialize with empty list on error
+      _shortcuts = [];
+      rethrow; // Re-throw to be caught by _loadData
     }
-    
-    _shortcuts = shortcuts;
-    
-    // Update lock task packages with any app shortcuts
-    await _updateLockTaskPackages();
   }
 
   Future<void> _saveShortcuts() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('shortcuts', ShortcutItem.encodeList(_shortcuts));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('shortcuts', ShortcutItem.encodeList(_shortcuts));
+    } catch (error, stackTrace) {
+      log('Error saving shortcuts: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la sauvegarde: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<void> _updateLockTaskPackages() async {
@@ -680,17 +731,31 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         }
       }
     } else {
-      // Regular web shortcut
+      // Regular web shortcut - reload settings from SharedPreferences to get latest values
+      final prefs = await SharedPreferences.getInstance();
+      final shortcutsJson = prefs.getString('shortcuts') ?? '';
+      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      
+      // Find the shortcut with matching URL to get updated settings
+      ShortcutItem updatedShortcut = shortcut;
+      for (final s in shortcuts) {
+        if (s.url == shortcut.url) {
+          updatedShortcut = s;
+          break;
+        }
+      }
+      
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => KioskWebViewScreen(
-            initialUrl: shortcut.url,
-            disableAutoFocus: shortcut.disableAutoFocus,
-            useCustomKeyboard: shortcut.useCustomKeyboard,
-            disableCopyPaste: shortcut.disableCopyPaste,
-            shortcutIconUrl: shortcut.iconUrl,
-            shortcutName: shortcut.name,
+            initialUrl: updatedShortcut.url,
+            disableAutoFocus: updatedShortcut.disableAutoFocus,
+            useCustomKeyboard: updatedShortcut.useCustomKeyboard,
+            disableCopyPaste: updatedShortcut.disableCopyPaste,
+            enableWarningSound: updatedShortcut.enableWarningSound,
+            shortcutIconUrl: updatedShortcut.iconUrl,
+            shortcutName: updatedShortcut.name,
           ),
         ),
       );

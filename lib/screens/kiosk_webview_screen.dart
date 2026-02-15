@@ -10,14 +10,17 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/logger.dart';
+import '../models/shortcut_item.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
+import 'error_page.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
   final bool disableAutoFocus;
   final bool useCustomKeyboard;
   final bool disableCopyPaste;
+  final bool enableWarningSound;
   final String? shortcutIconUrl;
   final String? shortcutName;
 
@@ -27,6 +30,7 @@ class KioskWebViewScreen extends StatefulWidget {
     this.disableAutoFocus = false,
     this.useCustomKeyboard = false,
     this.disableCopyPaste = false,
+    this.enableWarningSound = false,
     this.shortcutIconUrl,
     this.shortcutName,
   });
@@ -50,6 +54,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   bool _isShift = false; // Track Shift state (temporary, toggles off after use)
   late bool _useCustomKeyboardRuntime; // Runtime setting for custom keyboard
   late bool _disableCopyPasteRuntime; // Runtime setting for copy/paste
+  late bool _enableWarningSoundRuntime; // Runtime setting for warning sound
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
   Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
@@ -183,25 +188,47 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   @override
   void initState() {
     super.initState();
-    _useCustomKeyboardRuntime = widget.useCustomKeyboard;
-    _disableCopyPasteRuntime = widget.disableCopyPaste;
-    _audioPlayer = AudioPlayer();
-    _initializeWebView();
-    _loadCustomSettings(); // Fire-and-forget async loading
-    _loadAppVersion(); // Load app version
-    _keyboardMinimized = true; // Show keyboard shortcut by default
-    
-    // If custom keyboard is enabled, disable system keyboards at device level
-    if (_useCustomKeyboardRuntime) {
-      _disableSystemKeyboards();
+    try {
+      _useCustomKeyboardRuntime = widget.useCustomKeyboard;
+      _disableCopyPasteRuntime = widget.disableCopyPaste;
+      _enableWarningSoundRuntime = widget.enableWarningSound;
+      _audioPlayer = AudioPlayer();
+      _initializeWebView();
+      _loadCustomSettings(); // Fire-and-forget async loading
+      _loadAppVersion(); // Load app version
+      _keyboardMinimized = true; // Show keyboard shortcut by default
       
-      // Aggressive keyboard reset: retry multiple times to ensure it sticks
-      // This helps when returning from settings where native keyboard was active
-      _startAggressiveKeyboardReset();
+      // If custom keyboard is enabled, disable system keyboards at device level
+      if (_useCustomKeyboardRuntime) {
+        _disableSystemKeyboards();
+        
+        // Aggressive keyboard reset: retry multiple times to ensure it sticks
+        // This helps when returning from settings where native keyboard was active
+        _startAggressiveKeyboardReset();
+      }
+      
+      // Add observer to detect when screen comes back into view
+      WidgetsBinding.instance.addObserver(this);
+    } catch (error, stackTrace) {
+      log('Critical error in initState: $error');
+      log('Stack trace: $stackTrace');
+      // Show error in UI instead of crashing
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => ErrorPage(
+                errorTitle: 'Erreur d\'initialisation',
+                errorMessage: 'Impossible d\'initialiser le navigateur web',
+                error: error,
+                stackTrace: stackTrace,
+                onExit: () => Navigator.of(context).pop(),
+              ),
+            ),
+          );
+        }
+      });
     }
-    
-    // Add observer to detect when screen comes back into view
-    WidgetsBinding.instance.addObserver(this);
   }
   
   /// Aggressively resets keyboard state multiple times on initialization
@@ -293,35 +320,41 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   Future<void> _loadCustomSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _customAppName = prefs.getString('custom_app_name') ?? '';
-        _customIconUrl = widget.shortcutIconUrl ?? prefs.getString('custom_icon_url') ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _customAppName = prefs.getString('custom_app_name') ?? '';
+          _customIconUrl = widget.shortcutIconUrl ?? prefs.getString('custom_icon_url') ?? '';
 
-        // Load saved expanded keyboard position
-        final keyboardX = prefs.getDouble('keyboard_position_x');
-        final keyboardY = prefs.getDouble('keyboard_position_y');
-        if (keyboardX != null && keyboardY != null) {
-          _savedExpandedKeyboardPosition = Offset(keyboardX, keyboardY);
-          _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
-        }
+          // Load saved expanded keyboard position
+          final keyboardX = prefs.getDouble('keyboard_position_x');
+          final keyboardY = prefs.getDouble('keyboard_position_y');
+          if (keyboardX != null && keyboardY != null) {
+            _savedExpandedKeyboardPosition = Offset(keyboardX, keyboardY);
+            _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
+          }
 
-        // Load saved numeric keyboard position
-        final numericX = prefs.getDouble('numeric_keyboard_position_x');
-        final numericY = prefs.getDouble('numeric_keyboard_position_y');
-        if (numericX != null && numericY != null) {
-          _savedNumericKeyboardPosition = Offset(numericX, numericY);
-          _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
-        }
+          // Load saved numeric keyboard position
+          final numericX = prefs.getDouble('numeric_keyboard_position_x');
+          final numericY = prefs.getDouble('numeric_keyboard_position_y');
+          if (numericX != null && numericY != null) {
+            _savedNumericKeyboardPosition = Offset(numericX, numericY);
+            _keyboardHasBeenPositioned = true; // Mark as positioned since we have a saved position
+          }
 
-        // Load minimized icon position only (not keyboard position for numeric mode)
-        final iconX = prefs.getDouble('minimized_icon_position_x');
-        final iconY = prefs.getDouble('minimized_icon_position_y');
-        if (iconX != null && iconY != null) {
-          _minimizedIconPosition = Offset(iconX, iconY);
-        }
-      });
+          // Load minimized icon position only (not keyboard position for numeric mode)
+          final iconX = prefs.getDouble('minimized_icon_position_x');
+          final iconY = prefs.getDouble('minimized_icon_position_y');
+          if (iconX != null && iconY != null) {
+            _minimizedIconPosition = Offset(iconX, iconY);
+          }
+        });
+      }
+    } catch (error, stackTrace) {
+      log('Error loading custom settings: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - use defaults and continue
     }
   }
 
@@ -369,51 +402,203 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   Future<void> _saveCustomAppName(String name) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('custom_app_name', name);
-    setState(() {
-      _customAppName = name;
-    });
-    
-    // Ask user if they want to create a home screen shortcut
-    if (mounted && name.isNotEmpty) {
-      _askToCreateShortcut();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_app_name', name);
+      setState(() {
+        _customAppName = name;
+      });
+      
+      // Ask user if they want to create a home screen shortcut
+      if (mounted && name.isNotEmpty) {
+        _askToCreateShortcut();
+      }
+    } catch (error, stackTrace) {
+      log('Error saving custom app name: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la sauvegarde du nom: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _saveCustomIconUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('custom_icon_url', url);
-    setState(() {
-      _customIconUrl = url;
-      if (url.isNotEmpty) {
-        _faviconUrl = url;
-      } else {
-        _extractFavicon();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_icon_url', url);
+      setState(() {
+        _customIconUrl = url;
+        if (url.isNotEmpty) {
+          _faviconUrl = url;
+        } else {
+          _extractFavicon();
+        }
+      });
+      
+      // Ask user if they want to create/update a home screen shortcut with the new icon
+      if (mounted && url.isNotEmpty) {
+        _askToCreateShortcut();
       }
-    });
-    
-    // Ask user if they want to create/update a home screen shortcut with the new icon
-    if (mounted && url.isNotEmpty) {
-      _askToCreateShortcut();
+    } catch (error, stackTrace) {
+      log('Error saving custom icon URL: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la sauvegarde de l\'icône: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _saveKeyboardPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_isExpandedMode) {
-      await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
-      await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
-    } else {
-      await prefs.setDouble('numeric_keyboard_position_x', _keyboardPosition.dx);
-      await prefs.setDouble('numeric_keyboard_position_y', _keyboardPosition.dy);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_isExpandedMode) {
+        await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
+        await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
+      } else {
+        await prefs.setDouble('numeric_keyboard_position_x', _keyboardPosition.dx);
+        await prefs.setDouble('numeric_keyboard_position_y', _keyboardPosition.dy);
+      }
+    } catch (error, stackTrace) {
+      log('Error saving keyboard position: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - silently fail
     }
   }
 
   Future<void> _saveMinimizedIconPosition() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('minimized_icon_position_x', _minimizedIconPosition.dx);
-    await prefs.setDouble('minimized_icon_position_y', _minimizedIconPosition.dy);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('minimized_icon_position_x', _minimizedIconPosition.dx);
+      await prefs.setDouble('minimized_icon_position_y', _minimizedIconPosition.dy);
+    } catch (error, stackTrace) {
+      log('Error saving minimized icon position: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - silently fail
+    }
+  }
+
+  Future<void> _saveWarningSoundSetting(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shortcutsJson = prefs.getString('shortcuts') ?? '';
+      if (shortcutsJson.isEmpty) return;
+      
+      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      
+      // Find and update the shortcut for this URL
+      bool found = false;
+      for (int i = 0; i < shortcuts.length; i++) {
+        if (shortcuts[i].url == widget.initialUrl) {
+          shortcuts[i] = ShortcutItem(
+            id: shortcuts[i].id,
+            name: shortcuts[i].name,
+            url: shortcuts[i].url,
+            iconUrl: shortcuts[i].iconUrl,
+            disableAutoFocus: shortcuts[i].disableAutoFocus,
+            useCustomKeyboard: shortcuts[i].useCustomKeyboard,
+            disableCopyPaste: shortcuts[i].disableCopyPaste,
+            enableWarningSound: enabled,
+          );
+          found = true;
+          break;
+        }
+      }
+      
+      if (found) {
+        await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+        log('Warning sound setting saved: $enabled');
+      }
+    } catch (error, stackTrace) {
+      log('Error saving warning sound setting: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - silently fail
+    }
+  }
+
+  Future<void> _saveCustomKeyboardSetting(bool enabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shortcutsJson = prefs.getString('shortcuts') ?? '';
+      if (shortcutsJson.isEmpty) return;
+      
+      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      
+      // Find and update the shortcut for this URL
+      bool found = false;
+      for (int i = 0; i < shortcuts.length; i++) {
+        if (shortcuts[i].url == widget.initialUrl) {
+          shortcuts[i] = ShortcutItem(
+            id: shortcuts[i].id,
+            name: shortcuts[i].name,
+            url: shortcuts[i].url,
+            iconUrl: shortcuts[i].iconUrl,
+            disableAutoFocus: shortcuts[i].disableAutoFocus,
+            useCustomKeyboard: enabled,
+            disableCopyPaste: shortcuts[i].disableCopyPaste,
+            enableWarningSound: shortcuts[i].enableWarningSound,
+          );
+          found = true;
+          break;
+        }
+      }
+      
+      if (found) {
+        await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+        log('Custom keyboard setting saved: $enabled');
+      }
+    } catch (error, stackTrace) {
+      log('Error saving custom keyboard setting: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - silently fail
+    }
+  }
+
+  Future<void> _saveCopyPasteSetting(bool disabled) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shortcutsJson = prefs.getString('shortcuts') ?? '';
+      if (shortcutsJson.isEmpty) return;
+      
+      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      
+      // Find and update the shortcut for this URL
+      bool found = false;
+      for (int i = 0; i < shortcuts.length; i++) {
+        if (shortcuts[i].url == widget.initialUrl) {
+          shortcuts[i] = ShortcutItem(
+            id: shortcuts[i].id,
+            name: shortcuts[i].name,
+            url: shortcuts[i].url,
+            iconUrl: shortcuts[i].iconUrl,
+            disableAutoFocus: shortcuts[i].disableAutoFocus,
+            useCustomKeyboard: shortcuts[i].useCustomKeyboard,
+            disableCopyPaste: disabled,
+            enableWarningSound: shortcuts[i].enableWarningSound,
+          );
+          found = true;
+          break;
+        }
+      }
+      
+      if (found) {
+        await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+        log('Copy/Paste setting saved: $disabled');
+      }
+    } catch (error, stackTrace) {
+      log('Error saving copy/paste setting: $error');
+      log('Stack trace: $stackTrace');
+      // Non-critical - silently fail
+    }
   }
 
   void _initializeWebView() {
@@ -458,14 +643,22 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         'playWarningSound',
         onMessageReceived: (JavaScriptMessage message) {
           log('Warning sound triggered: ${message.message}');
-          _playWarningSound();
+          if (_enableWarningSoundRuntime) {
+            _playWarningSound();
+          } else {
+            log('Warning sound disabled by user setting');
+          }
         },
       )
       ..addJavaScriptChannel(
         'playErrorSound',
         onMessageReceived: (JavaScriptMessage message) {
           log('Error sound triggered: ${message.message}');
-          _playErrorSound();
+          if (_enableWarningSoundRuntime) {
+            _playErrorSound();
+          } else {
+            log('Error sound disabled by user setting');
+          }
         },
       )
       // Load blank page first, then actual URL
@@ -1063,23 +1256,33 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
 
         // Check first input field once on page load for warning or error messages
         // SAP displays messages immediately when page loads - no need to listen for changes
-        /*
-        const firstInput = document.querySelector('input, textarea, select');
-        if (firstInput && firstInput.value) {
-          const value = firstInput.value;
+        // Skip hidden inputs to find the actual visible error/warning message field
+        const firstInput = document.querySelector('input:not([type="hidden"]), textarea, select');
+        if (firstInput) {1
+
+          // For readonly/disabled fields, .value property may return empty string
+          // Use getAttribute('value') as fallback to get the actual HTML attribute value
+          let value = firstInput.value || firstInput.getAttribute('value') || '';
           
-          // Check for warning message
-          if (value === "Le UM scanné provient d'un transport") {
-            firstInput.blur(); // Only blur the first field
-            // playWarningSound.postMessage('Warning value detected');
-          }
-          // Check for error message
-          else if (value.startsWith("Erreur")) {
-            firstInput.blur(); // Only blur the first field
-            // playErrorSound.postMessage('Error value detected');
+          // Decode HTML entities (e.g., &nbsp; to space)
+          const textarea = document.createElement('textarea');
+          textarea.innerHTML = value;
+          value = textarea.value;
+                   
+          if (value) {
+            // Check for warning message
+            if (value === "Le UM scanné provient d'un autre transport" || value.includes("transport")) {
+              firstInput.blur(); // Remove focus from the warning field
+              playWarningSound.postMessage('Warning value detected');              
+            }
+            // Check for error message
+            // Use includes() for more flexible matching (handles &nbsp; and other variations)
+            else if (value.includes("Erreur")) {
+              firstInput.blur(); // Remove focus from the error field
+              playErrorSound.postMessage('Error value detected: ' + value);              
+            }
           }
         }
-        */
 
         console.log('Custom keyboard JavaScript injected');
         // Flag is now set earlier after basic setup
@@ -1938,16 +2141,27 @@ Widget _buildSavedNetworkItem(dynamic network) {
         builder: (context) => WebViewSettingsScreen(
           useCustomKeyboard: _useCustomKeyboardRuntime,
           disableCopyPaste: _disableCopyPasteRuntime,
-          onSettingsChanged: (useCustomKeyboard, disableCopyPaste) {
+          enableWarningSound: _enableWarningSoundRuntime,
+          onSettingsChanged: (useCustomKeyboard, disableCopyPaste, enableWarningSound) async {
+            // Save old values before updating
+            final oldDisableCopyPaste = _disableCopyPasteRuntime;
+            
             setState(() {
               _useCustomKeyboardRuntime = useCustomKeyboard;
               _disableCopyPasteRuntime = disableCopyPaste;
+              _enableWarningSoundRuntime = enableWarningSound;
               if (!useCustomKeyboard) {
                 _showCustomKeyboard = false;
               }
             });
+            
+            // Save all settings to shortcut
+            await _saveCustomKeyboardSetting(useCustomKeyboard);
+            await _saveCopyPasteSetting(disableCopyPaste);
+            await _saveWarningSoundSetting(enableWarningSound);
+            
             // Reload page to apply copy/paste changes if it changed
-            if (disableCopyPaste != _disableCopyPasteRuntime) {
+            if (disableCopyPaste != oldDisableCopyPaste) {
               _controller.reload();
             }
           },
@@ -4227,6 +4441,13 @@ Widget _buildSavedNetworkItem(dynamic network) {
         );
       },
     );
+  }
+
+  @override
+  void deactivate() {
+    // Stop any playing audio when navigating away from this screen
+    _audioPlayer.stop();
+    super.deactivate();
   }
 
   @override

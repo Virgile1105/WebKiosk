@@ -135,33 +135,38 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "getUrl" -> {
-                    // Only return URL once to prevent double processing
-                    if (!urlAlreadyRetrieved) {
-                        // Check if this is a main app launch (not from shortcut)
-                        if (intent.action == Intent.ACTION_MAIN) {
-                            Log.d(TAG, "Main app launch detected, returning null")
+                    try {
+                        // Only return URL once to prevent double processing
+                        if (!urlAlreadyRetrieved) {
+                            // Check if this is a main app launch (not from shortcut)
+                            if (intent.action == Intent.ACTION_MAIN) {
+                                Log.d(TAG, "Main app launch detected, returning null")
+                                result.success(null)
+                                return@setMethodCallHandler
+                            }
+                            
+                            // First try to get URL from intent extra
+                            var url = intent.getStringExtra("url")
+                            
+                            // If not found, try to get from intent data (for shortcuts)
+                            if (url.isNullOrEmpty() && intent.data != null) {
+                                val data = intent.data
+                                url = data?.getQueryParameter("url")
+                                Log.d(TAG, "Got URL from intent data: $url")
+                            }
+                            
+                            Log.d(TAG, "Returning URL: $url")
+                            if (!url.isNullOrEmpty()) {
+                                urlAlreadyRetrieved = true
+                            }
+                            result.success(url)
+                        } else {
+                            Log.d(TAG, "URL already retrieved, returning null")
                             result.success(null)
-                            return@setMethodCallHandler
                         }
-                        
-                        // First try to get URL from intent extra
-                        var url = intent.getStringExtra("url")
-                        
-                        // If not found, try to get from intent data (for shortcuts)
-                        if (url.isNullOrEmpty() && intent.data != null) {
-                            val data = intent.data
-                            url = data?.getQueryParameter("url")
-                            Log.d(TAG, "Got URL from intent data: $url")
-                        }
-                        
-                        Log.d(TAG, "Returning URL: $url")
-                        if (!url.isNullOrEmpty()) {
-                            urlAlreadyRetrieved = true
-                        }
-                        result.success(url)
-                    } else {
-                        Log.d(TAG, "URL already retrieved, returning null")
-                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting URL from intent", e)
+                        result.error("URL_ERROR", e.message, null)
                     }
                 }
                 "enableKioskMode" -> {
@@ -183,12 +188,22 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "isDeviceOwner" -> {
-                    val isOwner = isDeviceOwner()
-                    result.success(isOwner)
+                    try {
+                        val isOwner = isDeviceOwner()
+                        result.success(isOwner)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking device owner status", e)
+                        result.error("DEVICE_OWNER_ERROR", e.message, null)
+                    }
                 }
                 "isInKioskMode" -> {
-                    val inKiosk = isInKioskMode()
-                    result.success(inKiosk)
+                    try {
+                        val inKiosk = isInKioskMode()
+                        result.success(inKiosk)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking kiosk mode status", e)
+                        result.error("KIOSK_STATUS_ERROR", e.message, null)
+                    }
                 }
                 "exitToHome" -> {
                     try {
@@ -440,9 +455,12 @@ class MainActivity : FlutterActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 devicePolicyManager?.setLockTaskFeatures(
                     adminComponent!!,
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS or
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_HOME or
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
                     android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO
                 )
-                Log.d(TAG, "Lock task feature SYSTEM_INFO configured during setup")
+                Log.d(TAG, "Lock task features configured: GLOBAL_ACTIONS, HOME, NOTIFICATIONS, SYSTEM_INFO")
             }
             
             // Auto-grant Bluetooth permissions for device info
@@ -803,12 +821,15 @@ class MainActivity : FlutterActivity() {
         try {
             // Configure lock task features to show status bar (battery, network, time)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                // Android 9+ (API 28+): Enable system info bar
+                // Android 9+ (API 28+): Enable system info bar and power button access
                 devicePolicyManager?.setLockTaskFeatures(
                     adminComponent!!,
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS or
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_HOME or
+                    android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_NOTIFICATIONS or
                     android.app.admin.DevicePolicyManager.LOCK_TASK_FEATURE_SYSTEM_INFO
                 )
-                Log.d(TAG, "Lock task feature SYSTEM_INFO enabled - status bar will be visible")
+                Log.d(TAG, "Lock task features enabled: GLOBAL_ACTIONS (power button), HOME, NOTIFICATIONS, SYSTEM_INFO")
             }
             
             // Set this app as the lock task package

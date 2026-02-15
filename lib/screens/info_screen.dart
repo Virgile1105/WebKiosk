@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart';
+import 'error_page.dart';
 
 class InfoScreen extends StatefulWidget {
   final String appVersion;
@@ -84,8 +85,8 @@ class _InfoScreenState extends State<InfoScreen> {
           _isLoadingBluetooth = false;
         });
       }
-    } catch (e) {
-      log('Error loading device info: $e');
+    } catch (error, stackTrace) {
+      log('Error loading device info: $error');
       if (mounted) {
         setState(() {
           _ipAddress = 'Error loading';
@@ -93,6 +94,20 @@ class _InfoScreenState extends State<InfoScreen> {
           _androidDeviceModel = 'Error loading';
           _isLoadingBluetooth = false;
         });
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de chargement',
+              errorMessage: 'Impossible de charger les informations de l\'appareil',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _loadDeviceInfo();
+              },
+            ),
+          ),
+        );
       }
     }
   }
