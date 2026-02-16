@@ -64,8 +64,8 @@ class MainActivity : FlutterActivity() {
         // Auto-grant necessary permissions if device owner
         grantRequiredPermissions()
         
-        // Always ensure we're set as default home launcher on every startup
-        ensureDefaultHomeLauncher()
+        // Ensure we're set as default home launcher on every app start
+        setAsDefaultHome()
     }
     
     private fun grantRequiredPermissions() {
@@ -383,24 +383,7 @@ class MainActivity : FlutterActivity() {
                         result.error("BLUETOOTH_ERROR", e.message, null)
                     }
                 }
-                "setAsDefaultHome" -> {
-                    try {
-                        setAsDefaultHome()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error setting as default home", e)
-                        result.error("HOME_ERROR", e.message, null)
-                    }
-                }
-                "clearDefaultHome" -> {
-                    try {
-                        clearDefaultHome()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error clearing default home", e)
-                        result.error("HOME_ERROR", e.message, null)
-                    }
-                }
+
                 else -> {
                     result.notImplemented()
                 }
@@ -524,29 +507,6 @@ class MainActivity : FlutterActivity() {
         }
     }
     
-    private fun ensureDefaultHomeLauncher() {
-        try {
-            initDevicePolicyManager()
-            
-            if (!isDeviceOwner()) {
-                return
-            }
-            
-            // Check user preference
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            val setAsDefaultHome = prefs.getBoolean("flutter.set_as_default_home", true) // Default: true
-            
-            if (setAsDefaultHome) {
-                setAsDefaultHome()
-                Log.i(TAG, "Ensured DeviceGate is set as default home launcher")
-            } else {
-                Log.d(TAG, "Set as default home is disabled in preferences")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error ensuring default home launcher", e)
-        }
-    }
-    
     private fun setAsDefaultHome() {
         try {
             initDevicePolicyManager()
@@ -575,23 +535,7 @@ class MainActivity : FlutterActivity() {
         }
     }
     
-    private fun clearDefaultHome() {
-        try {
-            initDevicePolicyManager()
-            
-            if (!isDeviceOwner()) {
-                Log.w(TAG, "Not a device owner, cannot clear default home")
-                return
-            }
-            
-            // Clear persistent preferred home activity
-            devicePolicyManager?.clearPackagePersistentPreferredActivities(adminComponent!!, packageName)
-            
-            Log.d(TAG, "Cleared default home successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error clearing default home", e)
-        }
-    }
+
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

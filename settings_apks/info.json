@@ -1,0 +1,49 @@
+{
+    "apkm_version": 5,
+    "apk_title": "Settings: All Quick Access 1.6.13 (120-640dpi) (Android 6.0+)",
+    "app_name": "Settings: All Quick Access",
+    "release_version": "1.6.13",
+    "variant": "(universal) (120-640dpi) (Android 6.0+)",
+    "release_title": "Settings: All Quick Access 1.6.13 (120-640dpi) (Android 6.0+)",
+    "versioncode": "36",
+    "pname": "com.netvor.hiddensettings",
+    "post_date": "2026-01-02 23:26:59",
+    "capabilities": [],
+    "languages": [
+        "ar",
+        "en",
+        "es",
+        "fr",
+        "hu",
+        "in",
+        "it",
+        "ja",
+        "pl",
+        "pt",
+        "ru",
+        "sv",
+        "th",
+        "tr",
+        "uk",
+        "vi"
+    ],
+    "arches": [
+        "arm64-v8a",
+        "armeabi-v7a",
+        "x86",
+        "x86_64"
+    ],
+    "dpis": [
+        "120",
+        "160",
+        "213",
+        "240",
+        "320",
+        "480",
+        "640"
+    ],
+    "min_api": "23",
+    "accent_color": "94a8b8",
+    "apk_id": 12017063,
+    "release_id": 12017066
+}

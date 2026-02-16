@@ -14,7 +14,6 @@ class ConfigurationScreen extends StatefulWidget {
 class _ConfigurationScreenState extends State<ConfigurationScreen> {
   static const platform = MethodChannel('devicegate.app/shortcut');
   bool _alwaysShowTopBar = false;
-  bool _isDefaultHome = false;
   bool _isLoading = true;
 
   @override
@@ -28,7 +27,6 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
         _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
-        _isDefaultHome = prefs.getBool('set_as_default_home') ?? true;
         _isLoading = false;
       });
     } catch (e) {
@@ -86,53 +84,7 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
     }
   }
 
-  Future<void> _saveDefaultHomeSetting(bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('set_as_default_home', value);
-      setState(() {
-        _isDefaultHome = value;
-      });
-      
-      // Apply the setting immediately
-      if (value) {
-        await platform.invokeMethod('setAsDefaultHome');
 
-      } else {
-        await platform.invokeMethod('clearDefaultHome');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('DeviceGate n\'est plus l\'écran d\'accueil par défaut'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      }
-      
-      log('Saved default home setting: $value');
-    } catch (error, stackTrace) {
-      log('Error saving default home setting: $error');
-      log('Stack trace: $stackTrace');
-      if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de configuration',
-              errorMessage: 'Impossible de modifier le paramètre d\'écran d\'accueil',
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                Navigator.of(context).pop();
-                _saveDefaultHomeSetting(value);
-              },
-            ),
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -231,47 +183,6 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
                             child: Icon(
                               Icons.smartphone,
                               color: Colors.blue.shade700,
-                              size: 24,
-                            ),
-                          ),
-                          activeColor: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SwitchListTile(
-                          value: _isDefaultHome,
-                          onChanged: _saveDefaultHomeSetting,
-                          title: const Text(
-                            'Écran d\'accueil par défaut',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          subtitle: Text(
-                            _isDefaultHome
-                                ? 'DeviceGate se lance au démarrage et avec le bouton Home'
-                                : 'Le lanceur Android par défaut sera utilisé',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                          secondary: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.home,
-                              color: Colors.green.shade700,
                               size: 24,
                             ),
                           ),
