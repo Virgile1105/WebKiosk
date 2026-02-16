@@ -825,6 +825,95 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         }
         window.customKeyboardSetup = true;
 
+        ${_disableCopyPasteRuntime ? '''
+        // ===== COPY/PASTE BLOCKING - DEFINED FIRST =====
+        // Function to disable copy/paste on an element
+        function disableCopyPaste(element) {
+          if (!element || element.hasAttribute('data-copy-paste-disabled')) {
+            return;
+          }
+          element.setAttribute('data-copy-paste-disabled', 'true');
+          
+          // Prevent copy/paste/cut events
+          element.addEventListener('copy', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }, true);
+          
+          element.addEventListener('paste', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }, true);
+          
+          element.addEventListener('cut', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }, true);
+          
+          // Block keyboard shortcuts for copy/paste
+          element.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
+              e.preventDefault();
+              e.stopPropagation();
+              return false;
+            }
+          }, true);
+          
+          // Prevent context menu (right-click)
+          element.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }, true);
+          
+          // Apply CSS to prevent text selection
+          element.style.userSelect = 'none';
+          element.style.webkitUserSelect = 'none';
+          element.style.mozUserSelect = 'none';
+          element.style.msUserSelect = 'none';
+        }
+        
+        // Global event listeners to catch all copy/paste attempts
+        document.addEventListener('copy', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+        
+        document.addEventListener('paste', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+        
+        document.addEventListener('cut', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+        
+        document.addEventListener('contextmenu', function(e) {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.contentEditable === 'true') {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }, true);
+        
+        // Block keyboard shortcuts globally
+        document.addEventListener('keydown', function(e) {
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }, true);
+        // ===== END COPY/PASTE BLOCKING =====
+        ''' : ''}
+
         // Add CSS to ensure cursor is visible and prevent IME
         if (!document.querySelector('style[data-custom-keyboard]')) {
           const style = document.createElement('style');
@@ -839,72 +928,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             el.setAttribute('data-inputmode-set', 'true');
           }
         });
-
-        ${_disableCopyPasteRuntime ? '''
-        // Disable copy/paste if option is enabled
-        function disableCopyPaste(el) {
-          if (!el.hasAttribute('data-copy-paste-disabled')) {
-            el.setAttribute('data-copy-paste-disabled', 'true');
-            el.addEventListener('copy', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            });
-            el.addEventListener('paste', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            });
-            el.addEventListener('cut', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            });
-            el.addEventListener('contextmenu', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            });
-          }
-        }
-
-        // Global copy/paste disabling
-        if (!document.hasAttribute('data-global-copy-paste-disabled')) {
-          document.setAttribute('data-global-copy-paste-disabled', 'true');
-          document.addEventListener('copy', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          });
-          document.addEventListener('paste', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          });
-          document.addEventListener('cut', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          });
-          document.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          });
-
-          // Prevent keyboard shortcuts
-          document.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x')) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            }
-          });
-        }
-
-        // Apply to existing elements
-        document.querySelectorAll('input, textarea, [contenteditable], [role="textbox"]').forEach(disableCopyPaste);
-        ''' : ''}
 
         // Set up input listeners (only if not already set up)
         if (!window.inputListenersSetup) {

@@ -35,6 +35,7 @@ import android.view.WindowManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.os.UserManager
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
