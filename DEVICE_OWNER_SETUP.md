@@ -46,6 +46,17 @@ This guide explains how to set up your DeviceGate app as a Device Owner for kios
    Active admin set to component {com.devicegate.app/com.devicegate.app.MyDeviceAdminReceiver}
    ```
 
+4. Grant required permissions (optional - app will auto-grant on first launch):
+   ```bash
+   # For device info access on Android 12+
+   adb shell pm grant com.devicegate.app android.permission.BLUETOOTH_CONNECT
+   
+   # For screen timeout control
+   adb shell pm grant com.devicegate.app android.permission.WRITE_SECURE_SETTINGS
+   ```
+   
+   **Note:** DeviceGate automatically grants these permissions on first launch, so this step is optional.
+
 ## Step 4: Verify Device Owner Status
 
 1. Launch the DeviceGate app

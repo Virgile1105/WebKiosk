@@ -11,30 +11,154 @@ class ConfigurationScreen extends StatefulWidget {
   State<ConfigurationScreen> createState() => _ConfigurationScreenState();
 }
 
-class _ConfigurationScreenState extends State<ConfigurationScreen> {
+class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsBindingObserver {
   static const platform = MethodChannel('devicegate.app/shortcut');
   bool _alwaysShowTopBar = false;
+  int _screenTimeout = 60000; // Default: 1 minute
   bool _isLoading = true;
+  int? _deviceMaxTimeout; // Device's maximum supported timeout
+
+  // Base timeout options in milliseconds (without maximum)
+  final Map<String, int> _baseTimeoutOptions = {
+    '15 secondes': 15000,
+    '30 secondes': 30000,
+    '1 minute': 60000,
+    '2 minutes': 120000,
+    '5 minutes': 300000,
+    '10 minutes': 600000,
+  };
+  
+  // Dynamic timeout options (includes device maximum)
+  Map<String, int> get _timeoutOptions {
+    final options = Map<String, int>.from(_baseTimeoutOptions);
+    
+    // Always include 30 minutes
+    options['30 minutes'] = 1800000;
+    
+    // Add device maximum if detected and greater than 30 minutes
+    if (_deviceMaxTimeout != null && _deviceMaxTimeout! > 1800000) {
+      final maxLabel = _getTimeoutLabel(_deviceMaxTimeout!);
+      options[maxLabel] = _deviceMaxTimeout!;
+    }
+    
+    return options;
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Refresh timeout when app comes back to foreground
+    if (state == AppLifecycleState.resumed) {
+      _refreshScreenTimeout();
+    }
   }
 
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
-        _isLoading = false;
-      });
+      
+      // Check if this is first run (need to detect max timeout)
+      final firstRun = prefs.getBool('timeout_max_detected') ?? true;
+      
+      if (firstRun) {
+        // Detect and set maximum timeout on first run
+        final maxTimeout = await _detectAndSetMaxTimeout();
+        _deviceMaxTimeout = maxTimeout;
+        
+        // Save both the device maximum AND set it as current timeout
+        await prefs.setInt('device_max_timeout', maxTimeout);
+        await prefs.setInt('screen_timeout', maxTimeout);
+        await prefs.setBool('timeout_max_detected', false);
+        
+        setState(() {
+          _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+          _screenTimeout = maxTimeout;
+          _isLoading = false;
+        });
+      } else {
+        // Load stored maximum timeout
+        _deviceMaxTimeout = prefs.getInt('device_max_timeout');
+        
+        // Load current system timeout from Android
+        int systemTimeout = 60000; // Default fallback
+        try {
+          final timeout = await platform.invokeMethod('getScreenTimeout');
+          if (timeout != null && timeout is int) {
+            systemTimeout = timeout;
+          }
+        } catch (e) {
+          log('Error getting system timeout: $e');
+        }
+        
+        setState(() {
+          _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+          _screenTimeout = systemTimeout;
+          _isLoading = false;
+        });
+        
+        // Update SharedPreferences to match system value
+        await prefs.setInt('screen_timeout', systemTimeout);
+      }
+      
     } catch (e) {
       log('Error loading configuration: $e');
       setState(() {
         _isLoading = false;
       });
     }
+  }
+  
+  Future<int> _detectAndSetMaxTimeout() async {
+    // Try values in descending order: never → 2h → 1h → 30min
+    final testValues = [
+      2147483647, // Integer.MAX_VALUE (never)
+      7200000,    // 2 hours
+      3600000,    // 1 hour
+      1800000,    // 30 minutes
+    ];
+    
+    log('Detecting device maximum timeout...');
+    
+    for (final testValue in testValues) {
+      try {
+        // Try to set the timeout
+        await platform.invokeMethod('setScreenTimeout', {'timeout': testValue});
+        
+        // Wait a bit for the system to apply
+        await Future.delayed(const Duration(milliseconds: 100));
+        
+        // Read back what was actually set
+        final actualValue = await platform.invokeMethod('getScreenTimeout');
+        
+        if (actualValue != null && actualValue is int) {
+          // Check if the value was accepted (allow small variance for system adjustments)
+          if ((actualValue - testValue).abs() < 1000 || actualValue >= testValue * 0.9) {
+            log('Device maximum timeout detected: $testValue ms');
+            return testValue;
+          }
+        }
+      } catch (e) {
+        log('Error testing timeout $testValue: $e');
+      }
+    }
+    
+    // Fallback to 30 minutes if all tests fail
+    log('Using fallback maximum timeout: 30 minutes');
+    await platform.invokeMethod('setScreenTimeout', {'timeout': 1800000});
+    return 1800000;
   }
 
   Future<void> _saveTopBarSetting(bool value) async {
@@ -81,6 +205,163 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
       log('Applied system UI mode: alwaysShowTopBar=$alwaysShowTopBar');
     } catch (e) {
       log('Error applying system UI mode: $e');
+    }
+  }
+
+  Future<void> _saveScreenTimeout(int timeout) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('screen_timeout', timeout);
+      setState(() {
+        _screenTimeout = timeout;
+      });
+      
+      // Apply the setting immediately
+      await _applyScreenTimeout(timeout);
+
+    } catch (error, stackTrace) {
+      log('Error saving screen timeout: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de configuration',
+              errorMessage: 'Impossible de sauvegarder le délai de mise en veille de l\'écran',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _saveScreenTimeout(timeout);
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _applyScreenTimeout(int timeout) async {
+    try {
+      await platform.invokeMethod('setScreenTimeout', {
+        'timeout': timeout,
+      });
+      
+      log('Applied screen timeout: $timeout ms');
+    } catch (e) {
+      log('Error applying screen timeout: $e');
+    }
+  }
+
+  String _getTimeoutLabel(int timeout) {
+    // Check for "never" (Integer.MAX_VALUE)
+    if (timeout >= 2147483000) { // Close to Integer.MAX_VALUE
+      return 'Jamais';
+    }
+    
+    // First check if it matches our predefined options
+    for (var entry in _timeoutOptions.entries) {
+      if (entry.value == timeout) {
+        return entry.key;
+      }
+    }
+    
+    // If not in our list, format the actual value from Android
+    if (timeout < 1000) {
+      return '$timeout ms';
+    } else if (timeout < 60000) {
+      final seconds = (timeout / 1000).round();
+      return '$seconds seconde${seconds > 1 ? 's' : ''}';
+    } else if (timeout < 3600000) {
+      final minutes = (timeout / 60000).round();
+      return '$minutes minute${minutes > 1 ? 's' : ''}';
+    } else {
+      final hours = (timeout / 3600000).round();
+      return '$hours heure${hours > 1 ? 's' : ''}';
+    }
+  }
+
+  void _showTimeoutDialog() {
+    // Build the list of timeout options
+    final optionsList = <Widget>[];
+    final addedValues = <int>{};
+    
+    // Add all predefined options
+    for (var entry in _timeoutOptions.entries) {
+      addedValues.add(entry.value);
+      optionsList.add(
+        RadioListTile<int>(
+          title: Text(entry.key),
+          value: entry.value,
+          groupValue: _screenTimeout,
+          onChanged: (value) {
+            Navigator.pop(context);
+            if (value != null) {
+              _saveScreenTimeout(value);
+            }
+          },
+          activeColor: Colors.blue,
+        ),
+      );
+    }
+    
+    // If current Android value is not in our list, add it
+    if (!addedValues.contains(_screenTimeout)) {
+      final customLabel = _getTimeoutLabel(_screenTimeout);
+      optionsList.insert(0, 
+        RadioListTile<int>(
+          title: Text('$customLabel (actuel)'),
+          subtitle: const Text('Valeur système actuelle'),
+          value: _screenTimeout,
+          groupValue: _screenTimeout,
+          onChanged: (value) {
+            Navigator.pop(context);
+            if (value != null) {
+              _saveScreenTimeout(value);
+            }
+          },
+          activeColor: Colors.orange,
+        ),
+      );
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Mise en veille de l\'écran'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: optionsList,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      // Refresh timeout value when dialog closes to sync with any external changes
+      _refreshScreenTimeout();
+    });
+  }
+
+  Future<void> _refreshScreenTimeout() async {
+    try {
+      final timeout = await platform.invokeMethod('getScreenTimeout');
+      if (timeout != null && timeout is int && mounted) {
+        setState(() {
+          _screenTimeout = timeout;
+        });
+        
+        // Update SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('screen_timeout', timeout);
+      }
+    } catch (e) {
+      log('Error refreshing screen timeout: $e');
     }
   }
 
@@ -187,6 +468,47 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> {
                             ),
                           ),
                           activeColor: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          onTap: _showTimeoutDialog,
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.screen_lock_portrait,
+                              color: Colors.orange.shade700,
+                              size: 24,
+                            ),
+                          ),
+                          title: const Text(
+                            'Mise en veille de l\'écran',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Actuellement: ${_getTimeoutLabel(_screenTimeout)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          trailing: Icon(
+                            Icons.chevron_right,
+                            color: Colors.grey.shade400,
+                          ),
                         ),
                       ),
 

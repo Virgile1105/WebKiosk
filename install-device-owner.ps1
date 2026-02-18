@@ -54,6 +54,29 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Device Owner set successfully!" -ForegroundColor Green
 
+# Grant required permissions
+Write-Host ""
+Write-Host "Granting required permissions..." -ForegroundColor Yellow
+
+# Grant BLUETOOTH_CONNECT for device info (Android 12+)
+Write-Host "  - BLUETOOTH_CONNECT..." -ForegroundColor White
+adb shell pm grant com.devicegate.app android.permission.BLUETOOTH_CONNECT 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "    Granted!" -ForegroundColor Green
+} else {
+    Write-Host "    Skipped (not needed or app will auto-grant)" -ForegroundColor Gray
+}
+
+# Grant WRITE_SECURE_SETTINGS for screen timeout control
+Write-Host "  - WRITE_SECURE_SETTINGS..." -ForegroundColor White
+adb shell pm grant com.devicegate.app android.permission.WRITE_SECURE_SETTINGS
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "    Warning: Failed to grant. App will auto-grant on first launch." -ForegroundColor Yellow
+} else {
+    Write-Host "    Granted!" -ForegroundColor Green
+}
+
 # Launch the app
 Write-Host ""
 Write-Host "Launching DeviceGate..." -ForegroundColor Yellow

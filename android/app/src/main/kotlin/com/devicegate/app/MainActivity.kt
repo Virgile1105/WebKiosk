@@ -36,6 +36,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.os.UserManager
+import android.provider.Settings
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
@@ -101,8 +102,37 @@ class MainActivity : FlutterActivity() {
                     Log.e(TAG, "Error auto-granting BLUETOOTH_CONNECT permission", e)
                 }
             }
+            
+            // Auto-grant WRITE_SECURE_SETTINGS for screen timeout control
+            try {
+                if (!hasPermission(Manifest.permission.WRITE_SECURE_SETTINGS)) {
+                    val granted = grantPermissionViaShell(Manifest.permission.WRITE_SECURE_SETTINGS)
+                    Log.i(TAG, "WRITE_SECURE_SETTINGS permission auto-granted on startup: $granted")
+                } else {
+                    Log.d(TAG, "WRITE_SECURE_SETTINGS permission already granted")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error auto-granting WRITE_SECURE_SETTINGS permission", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error in grantRequiredPermissions", e)
+        }
+    }
+    
+    private fun hasPermission(permission: String): Boolean {
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
+    
+    private fun grantPermissionViaShell(permission: String): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec("pm grant $packageName $permission")
+            process.waitFor()
+            val exitCode = process.exitValue()
+            Log.d(TAG, "Permission grant shell command exit code: $exitCode")
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Error executing shell command to grant permission", e)
+            false
         }
     }
 
@@ -364,6 +394,25 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error applying system UI mode", e)
                         result.error("SYSTEM_UI_ERROR", e.message, null)
+                    }
+                }
+                "setScreenTimeout" -> {
+                    try {
+                        val timeout = call.argument<Int>("timeout") ?: 60000
+                        val success = setScreenTimeout(timeout)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting screen timeout", e)
+                        result.error("SCREEN_TIMEOUT_ERROR", e.message, null)
+                    }
+                }
+                "getScreenTimeout" -> {
+                    try {
+                        val timeout = getScreenTimeout()
+                        result.success(timeout)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting screen timeout", e)
+                        result.error("SCREEN_TIMEOUT_ERROR", e.message, null)
                     }
                 }
                 "getDeviceModel" -> {
@@ -2173,6 +2222,53 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error applying system UI mode", e)
+        }
+    }
+
+    private fun setScreenTimeout(timeout: Int): Boolean {
+        try {
+            // Use timeout value as-is (no longer converting -1 to Integer.MAX_VALUE)
+            val timeoutValue = timeout
+            
+            // Set screen timeout directly using Settings.System
+            // This works because we have WRITE_SECURE_SETTINGS permission as Device Owner
+            val result = Settings.System.putInt(
+                contentResolver,
+                Settings.System.SCREEN_OFF_TIMEOUT,
+                timeoutValue
+            )
+            
+            if (result) {
+                Log.i(TAG, "Screen timeout successfully set to: $timeout ms")
+            } else {
+                Log.e(TAG, "Failed to set screen timeout - putInt returned false")
+            }
+            
+            return result
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException setting screen timeout - missing WRITE_SECURE_SETTINGS permission?", e)
+            return false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting screen timeout", e)
+            return false
+        }
+    }
+
+    private fun getScreenTimeout(): Int {
+        try {
+            // Get current screen timeout from system settings
+            val timeoutValue = Settings.System.getInt(
+                contentResolver,
+                Settings.System.SCREEN_OFF_TIMEOUT,
+                60000 // Default: 1 minute
+            )
+            
+            // Return timeout value as-is (no conversion needed)
+            Log.i(TAG, "Current screen timeout: $timeoutValue ms")
+            return timeoutValue
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting screen timeout", e)
+            return 60000 // Default: 1 minute
         }
     }
 }
