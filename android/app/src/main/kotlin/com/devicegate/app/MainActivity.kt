@@ -8,7 +8,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
-import io.flutter.Log
+import android.util.Log
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.BroadcastReceiver
@@ -1088,15 +1088,17 @@ class MainActivity : FlutterActivity() {
     }
     
     /**
-     * Sets the empty IME as the only permitted keyboard.
-     * This replaces all system keyboards (including Gboard) with our invisible IME.
+     * Disables system soft keyboards but allows hardware input devices.
+     * Note: We don't restrict permitted IMEs anymore (since we removed EmptyKeyboardService).
+     * Instead, we rely on hideImeAggressively() to block soft keyboards with window flags
+     * while detecting and allowing hardware scanners.
      * Only works when app is device owner.
      */
     private fun disableSystemKeyboards(): Boolean {
         initDevicePolicyManager()
         
         if (!isDeviceOwner()) {
-            Log.w(TAG, "Not a device owner, cannot set empty keyboard")
+            Log.w(TAG, "Not a device owner, cannot manage keyboards")
             return false
         }
         
@@ -1105,21 +1107,20 @@ class MainActivity : FlutterActivity() {
             val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             val enabledImes = inputMethodManager.enabledInputMethodList
             
-            // Save current IMEs before changing
+            // Save current IMEs for reference
             val imeIds = enabledImes.map { it.id }
             val prefs = getSharedPreferences("DeviceGatePrefs", Context.MODE_PRIVATE)
             prefs.edit().putStringSet("savedSystemKeyboards", imeIds.toSet()).apply()
             
             Log.d(TAG, "Found ${imeIds.size} system keyboards: $imeIds")
             
-            // Set permitted input methods to ONLY our empty keyboard
-            val emptyImeId = "${packageName}/.EmptyKeyboardService"
-            devicePolicyManager?.setPermittedInputMethods(adminComponent!!, listOf(emptyImeId))
-            
-            Log.d(TAG, "Empty keyboard set as only permitted IME: $emptyImeId")
+            // We no longer restrict permitted IMEs since we removed EmptyKeyboardService
+            // Instead, hideImeAggressively() handles blocking soft keyboards while allowing
+            // hardware input devices (scanners) to work
+            Log.d(TAG, "Keyboard management delegated to hideImeAggressively() for smart blocking")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting empty keyboard", e)
+            Log.e(TAG, "Error in disableSystemKeyboards", e)
             return false
         }
     }
@@ -1149,86 +1150,68 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Aggressively switches to empty IME and hides IME navigation bar.
-     * Uses multiple techniques to ensure the IME bar doesn't show:
-     * 1. Force enables our empty keyboard if not enabled
-     * 2. Force switches to our empty keyboard
-     * 3. Sets aggressive window flags to prevent IME bar
+     * Aggressively hides the system keyboard IME bar from appearing (even on focus)
+     * BUT allows hardware input devices like barcode scanners to work
+     * Strategy: Detect if current IME is a hardware device (Honeywell, Datalogic, etc.)
+     * and only block soft keyboards
      */
     private fun hideImeAggressively() {
         try {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            val emptyImeId = "${packageName}/.EmptyKeyboardService"
             
-            // Check if our empty IME is enabled
-            val enabledImes = imm.enabledInputMethodList
-            val isEmptyImeEnabled = enabledImes.any { it.id == emptyImeId }
+            // Get current active input method
+            val currentIme = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.DEFAULT_INPUT_METHOD
+            )
             
-            if (!isEmptyImeEnabled) {
-                Log.d(TAG, "Empty IME not enabled yet - user needs to enable it in settings")
-                // Try to open IME settings to let user enable it
-                try {
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not open IME settings", e)
-                }
+            // List of known scanner/hardware keyboard IME packages that should NOT be blocked
+            val hardwareInputDevices = listOf(
+                "honeywell",      // Honeywell scanners (e.g., XLR)
+                "datalogic",      // Datalogic scanners (e.g., Powerscan)
+                "zebra",          // Zebra scanners
+                "scanner",        // Generic scanner keyword
+                "barcode",        // Barcode scanner keyword
+                "hardware",       // Hardware keyboard keyword
+                "physical"        // Physical keyboard keyword
+            )
+            
+            // Check if current IME is a hardware input device
+            val isHardwareDevice = hardwareInputDevices.any { 
+                currentIme?.contains(it, ignoreCase = true) == true 
+            }
+            
+            if (isHardwareDevice) {
+                // Don't block hardware input devices - allow them to work
+                Log.d(TAG, "Detected hardware input device IME: $currentIme - allowing input")
+                // Clear any previous aggressive flags to ensure scanner works
+                window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+                window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED)
             } else {
-                Log.d(TAG, "Empty IME is enabled")
-            }
-            
-            // Force switch to our empty keyboard using reflection (requires system permissions or device owner)
-            try {
-                // Method 1: Try using hidden setInputMethod API
-                val setInputMethodMethod = imm.javaClass.getMethod(
-                    "setInputMethod",
-                    android.os.IBinder::class.java,
-                    String::class.java
-                )
-                window?.decorView?.windowToken?.let { token ->
-                    setInputMethodMethod.invoke(imm, token, emptyImeId)
-                    Log.d(TAG, "Switched to empty IME using setInputMethod")
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "setInputMethod not available: ${e.message}")
+                // It's a soft keyboard - hide it aggressively
+                Log.d(TAG, "Detected soft keyboard IME: $currentIme - blocking")
                 
-                // Method 2: Try using setInputMethodAndSubtype
-                try {
-                    val inputMethodInfo = enabledImes.find { it.id == emptyImeId }
-                    if (inputMethodInfo != null) {
-                        val setInputMethodAndSubtypeMethod = imm.javaClass.getMethod(
-                            "setInputMethodAndSubtype",
-                            android.os.IBinder::class.java,
-                            String::class.java,
-                            android.view.inputmethod.InputMethodSubtype::class.java
-                        )
-                        window?.decorView?.windowToken?.let { token ->
-                            setInputMethodAndSubtypeMethod.invoke(imm, token, emptyImeId, null)
-                            Log.d(TAG, "Switched to empty IME using setInputMethodAndSubtype")
-                        }
-                    }
-                } catch (e2: Exception) {
-                    Log.d(TAG, "setInputMethodAndSubtype not available: ${e2.message}")
+                // VERY AGGRESSIVE: Set multiple window flags to prevent IME bar
+                window?.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                )
+                
+                // Additional aggressive flag: Add FLAG_ALT_FOCUSABLE_IM to prevent IME bar
+                window?.setFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                )
+                
+                // Also hide any currently shown soft keyboard
+                currentFocus?.let { focus ->
+                    imm.hideSoftInputFromWindow(focus.windowToken, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
                 }
+                
+                Log.d(TAG, "Soft keyboard blocked with aggressive IME hiding (FLAG_ALT_FOCUSABLE_IM)")
             }
-            
-            // VERY AGGRESSIVE: Set multiple window flags to prevent IME bar
-            window?.setSoftInputMode(
-                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
-                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-            )
-            
-            // Additional aggressive flag: Add FLAG_ALT_FOCUSABLE_IM to prevent IME bar
-            // This was the "very aggressive" flag that worked before
-            window?.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-            )
-            
-            Log.d(TAG, "Empty IME activated with very aggressive IME bar hiding (FLAG_ALT_FOCUSABLE_IM)")
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting empty IME", e)
+            Log.e(TAG, "Error in hideImeAggressively", e)
         }
     }
 
