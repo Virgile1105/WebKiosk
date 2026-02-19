@@ -196,154 +196,186 @@ class _PasswordDialogState extends State<PasswordDialog> {
     
     return Dialog(
       backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Title with back arrow
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  icon: const Icon(Icons.arrow_back),
-                  color: const Color.fromRGBO(51, 61, 71, 1),
-                ),
-                const Expanded(
-                  child: Text(
-                    'Code d\'accès',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color.fromRGBO(51, 61, 71, 1),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(width: 48), // Balance the back button
-              ],
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Calculate responsive sizes
+          final screenHeight = MediaQuery.of(context).size.height;
+          final screenWidth = MediaQuery.of(context).size.width;
+          final isPortrait = screenHeight > screenWidth;
+          
+          // Adaptive sizing
+          final dialogPadding = isPortrait ? 16.0 : 20.0;
+          final titleFontSize = isPortrait ? 20.0 : 24.0;
+          final buttonSize = isPortrait ? 48.0 : 55.0;
+          final buttonMargin = isPortrait ? 4.0 : 6.0;
+          final buttonFontSize = isPortrait ? 20.0 : 24.0;
+          final dotSize = isPortrait ? 12.0 : 16.0;
+          final dotSpacing = isPortrait ? 6.0 : 8.0;
+          final verticalSpacing = isPortrait ? 16.0 : 24.0;
+          final validateButtonHeight = isPortrait ? 44.0 : 50.0;
+          
+          return Container(
+            constraints: BoxConstraints(
+              maxWidth: isPortrait ? screenWidth * 0.9 : 500,
+              maxHeight: screenHeight * 0.85,
             ),
-            const SizedBox(height: 32),
-            
-            // Dots indicator with clear button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // 6 dots
-                ...List.generate(_codeLength, (index) {
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: index < _enteredCode.length
-                          ? const Color.fromRGBO(51, 61, 71, 1)
-                          : const Color.fromRGBO(51, 61, 71, 0.2),
-                      border: Border.all(
+            padding: EdgeInsets.all(dialogPadding),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Title with back arrow
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        icon: const Icon(Icons.arrow_back),
+                        iconSize: isPortrait ? 20 : 24,
                         color: const Color.fromRGBO(51, 61, 71, 1),
-                        width: 2,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Code d\'accès',
+                          style: TextStyle(
+                            fontSize: titleFontSize,
+                            fontWeight: FontWeight.bold,
+                            color: const Color.fromRGBO(51, 61, 71, 1),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      SizedBox(width: isPortrait ? 24 : 48),
+                    ],
+                  ),
+                  SizedBox(height: verticalSpacing),
+                  
+                  // Dots indicator with clear button
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // 6 dots
+                      ...List.generate(_codeLength, (index) {
+                        return Container(
+                          margin: EdgeInsets.symmetric(horizontal: dotSpacing),
+                          width: dotSize,
+                          height: dotSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: index < _enteredCode.length
+                                ? const Color.fromRGBO(51, 61, 71, 1)
+                                : const Color.fromRGBO(51, 61, 71, 0.2),
+                            border: Border.all(
+                              color: const Color.fromRGBO(51, 61, 71, 1),
+                              width: 2,
+                            ),
+                          ),
+                        );
+                      }),
+                      SizedBox(width: dotSpacing * 2),
+                      // Clear button
+                      IconButton(
+                        onPressed: isLockedOut ? null : _onClearPressed,
+                        icon: Icon(Icons.close, size: isPortrait ? 22 : 28),
+                        color: const Color.fromRGBO(51, 61, 71, 1),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  
+                  SizedBox(height: verticalSpacing * 0.3),
+                  
+                  // Error message area
+                  SizedBox(
+                    height: isPortrait ? 32 : 40,
+                    child: Center(
+                      child: _errorMessage != null
+                          ? Text(
+                              _errorMessage!,
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontSize: isPortrait ? 12 : 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                  
+                  SizedBox(height: verticalSpacing * 0.25),
+                  
+                  // Numeric keyboard (2 rows of 5)
+                  Opacity(
+                    opacity: isLockedOut ? 0.3 : 1.0,
+                    child: Column(
+                      children: [
+                        // First row (5 keys)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: _shuffledKeys.sublist(0, 5).map((number) {
+                            return _buildNumberButton(number, !isLockedOut, buttonSize, buttonMargin, buttonFontSize);
+                          }).toList(),
+                        ),
+                        SizedBox(height: buttonMargin * 2),
+                        // Second row (5 keys)
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: _shuffledKeys.sublist(5, 10).map((number) {
+                            return _buildNumberButton(number, !isLockedOut, buttonSize, buttonMargin, buttonFontSize);
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  SizedBox(height: verticalSpacing),
+                  
+                  // Validate button
+                  SizedBox(
+                    width: double.infinity,
+                    height: validateButtonHeight,
+                    child: ElevatedButton(
+                      onPressed: (_enteredCode.length == _codeLength && !isLockedOut)
+                          ? _onValidatePressed
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        'Valider',
+                        style: TextStyle(
+                          fontSize: isPortrait ? 16 : 18,
+                          color: (_enteredCode.length == _codeLength && !isLockedOut)
+                              ? Colors.white
+                              : Colors.grey.shade600,
+                        ),
                       ),
                     ),
-                  );
-                }),
-                const SizedBox(width: 16),
-                // Clear button
-                IconButton(
-                  onPressed: isLockedOut ? null : _onClearPressed,
-                  icon: const Icon(Icons.close, size: 28),
-                  color: const Color.fromRGBO(51, 61, 71, 1),
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: 24),
-            
-            // Error message area (fixed height)
-            SizedBox(
-              height: 48,
-              child: Center(
-                child: _errorMessage != null
-                    ? Text(
-                        _errorMessage!,
-                        style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ),
-            
-            const SizedBox(height: 8),
-            
-            // Numeric keyboard (2 rows of 5)
-            Opacity(
-              opacity: isLockedOut ? 0.3 : 1.0,
-              child: Column(
-                children: [
-                  // First row (5 keys)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: _shuffledKeys.sublist(0, 5).map((number) {
-                      return _buildNumberButton(number, !isLockedOut);
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  // Second row (5 keys)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: _shuffledKeys.sublist(5, 10).map((number) {
-                      return _buildNumberButton(number, !isLockedOut);
-                    }).toList(),
                   ),
                 ],
               ),
             ),
-            
-            const SizedBox(height: 24),
-            
-            // Validate button
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: (_enteredCode.length == _codeLength && !isLockedOut)
-                    ? _onValidatePressed
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'Valider',
-                  style: TextStyle(
-                    fontSize: 18,
-                    color: (_enteredCode.length == _codeLength && !isLockedOut)
-                        ? Colors.white
-                        : Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildNumberButton(int number, bool enabled) {
+  Widget _buildNumberButton(int number, bool enabled, double size, double margin, double fontSize) {
     return Container(
-      margin: const EdgeInsets.all(6),
+      margin: EdgeInsets.all(margin),
       child: ElevatedButton(
         onPressed: enabled ? () => _onNumberPressed(number) : null,
         style: ElevatedButton.styleFrom(
@@ -354,12 +386,13 @@ class _PasswordDialogState extends State<PasswordDialog> {
             borderRadius: BorderRadius.circular(8),
           ),
           padding: const EdgeInsets.all(0),
-          minimumSize: const Size(60, 60),
+          minimumSize: Size(size, size),
+          maximumSize: Size(size, size),
         ),
         child: Text(
           '$number',
-          style: const TextStyle(
-            fontSize: 24,
+          style: TextStyle(
+            fontSize: fontSize,
             fontWeight: FontWeight.bold,
           ),
         ),

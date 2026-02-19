@@ -14,6 +14,8 @@ class ConfigurationScreen extends StatefulWidget {
 class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsBindingObserver {
   static const platform = MethodChannel('devicegate.app/shortcut');
   bool _alwaysShowTopBar = false;
+  bool _autoRotation = true; // Auto-rotation enabled by default
+  String _lockedOrientation = 'landscape'; // Default locked orientation
   int _screenTimeout = 60000; // Default: 1 minute
   bool _isLoading = true;
   int? _deviceMaxTimeout; // Device's maximum supported timeout
@@ -73,6 +75,17 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       // Check if this is first run (need to detect max timeout)
       final firstRun = prefs.getBool('timeout_max_detected') ?? true;
       
+      // Load current auto-rotation from Android system
+      bool systemAutoRotation = true; // Default fallback
+      try {
+        final autoRotation = await platform.invokeMethod('getAutoRotation');
+        if (autoRotation != null && autoRotation is bool) {
+          systemAutoRotation = autoRotation;
+        }
+      } catch (e) {
+        log('Error getting system auto-rotation: $e');
+      }
+      
       if (firstRun) {
         // Detect and set maximum timeout on first run
         final maxTimeout = await _detectAndSetMaxTimeout();
@@ -85,9 +98,16 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
         
         setState(() {
           _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+          _autoRotation = systemAutoRotation;
           _screenTimeout = maxTimeout;
           _isLoading = false;
         });
+        
+        // Update SharedPreferences to match system value
+        await prefs.setBool('auto_rotation', systemAutoRotation);
+        
+        // Load locked orientation
+        _loadLockedOrientation();
       } else {
         // Load stored maximum timeout
         _deviceMaxTimeout = prefs.getInt('device_max_timeout');
@@ -105,12 +125,17 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
         
         setState(() {
           _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+          _autoRotation = systemAutoRotation;
           _screenTimeout = systemTimeout;
           _isLoading = false;
         });
         
-        // Update SharedPreferences to match system value
+        // Update SharedPreferences to match system values
         await prefs.setInt('screen_timeout', systemTimeout);
+        await prefs.setBool('auto_rotation', systemAutoRotation);
+        
+        // Load locked orientation
+        _loadLockedOrientation();
       }
       
     } catch (e) {
@@ -205,6 +230,67 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       log('Applied system UI mode: alwaysShowTopBar=$alwaysShowTopBar');
     } catch (e) {
       log('Error applying system UI mode: $e');
+    }
+  }
+
+  Future<void> _saveAutoRotationSetting(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('auto_rotation', value);
+      setState(() {
+        _autoRotation = value;
+      });
+      
+      // Apply the setting immediately
+      _applyScreenOrientation(value);
+
+    } catch (error, stackTrace) {
+      log('Error saving auto-rotation setting: $error');
+      log('Stack trace: $stackTrace');
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ErrorPage(
+              errorTitle: 'Erreur de configuration',
+              errorMessage: 'Impossible de sauvegarder le paramètre de rotation automatique',
+              error: error,
+              stackTrace: stackTrace,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _saveAutoRotationSetting(value);
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _applyScreenOrientation(bool autoRotation) async {
+    try {
+      await platform.invokeMethod('setScreenOrientation', {
+        'autoRotation': autoRotation,
+      });
+      
+      // Load the locked orientation after setting
+      await _loadLockedOrientation();
+      
+      log('Applied screen orientation: autoRotation=$autoRotation');
+    } catch (e) {
+      log('Error applying screen orientation: $e');
+    }
+  }
+
+  Future<void> _loadLockedOrientation() async {
+    try {
+      final orientation = await platform.invokeMethod('getLockedOrientation');
+      if (orientation != null && orientation is String && mounted) {
+        setState(() {
+          _lockedOrientation = orientation;
+        });
+      }
+    } catch (e) {
+      log('Error loading locked orientation: $e');
     }
   }
 
@@ -468,6 +554,47 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                             ),
                           ),
                           activeColor: Colors.blue,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SwitchListTile(
+                          value: _autoRotation,
+                          onChanged: _saveAutoRotationSetting,
+                          title: const Text(
+                            'Rotation automatique',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _autoRotation
+                                ? 'L\'écran pivote automatiquement selon l\'orientation'
+                                : 'Verrouillé en ${_lockedOrientation == "landscape" ? "paysage" : "portrait"}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          secondary: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.screen_rotation,
+                              color: Colors.green.shade700,
+                              size: 24,
+                            ),
+                          ),
+                          activeColor: Colors.green,
                         ),
                       ),
                       const SizedBox(height: 8),

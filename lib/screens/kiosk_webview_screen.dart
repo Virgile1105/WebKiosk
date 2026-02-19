@@ -14,6 +14,7 @@ import '../models/shortcut_item.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
 import 'error_page.dart';
+import 'http_error_page.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
@@ -739,6 +740,45 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                 // Hide custom keyboard when error page is shown
                 _showCustomKeyboard = false;
               });
+            }
+          },
+          onHttpError: (HttpResponseError error) {
+            log('HTTP error: ${error.response?.statusCode} (URL: ${error.response?.uri})');
+            // Handle HTTP errors like 500, 404, 403, etc.
+            if (mounted) {
+              final statusCode = error.response?.statusCode ?? 0;
+              final url = error.response?.uri?.toString() ?? 'Unknown URL';
+              
+              // Navigate to dedicated HTTP error page
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => HttpErrorPage(
+                    statusCode: statusCode,
+                    url: url,
+                    onRetry: () {
+                      // Pop the error page and reload the current URL
+                      Navigator.of(context).pop();
+                      _controller.reload();
+                    },
+                    onReload: () {
+                      // Pop the error page and reload from initial URL (clear cache)
+                      Navigator.of(context).pop();
+                      _controller.loadRequest(
+                        Uri.parse(widget.initialUrl),
+                        headers: {
+                          'Cache-Control': 'no-cache, no-store, must-revalidate',
+                          'Pragma': 'no-cache',
+                          'Expires': '0',
+                        },
+                      );
+                    },
+                    onExit: () {
+                      // Go back to shortcut list
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                ),
+              );
             }
           },
         ),
