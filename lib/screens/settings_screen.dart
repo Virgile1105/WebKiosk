@@ -358,7 +358,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle: const Text('Return to native Android home'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
-                    Navigator.pop(context);
                     _exitToHome();
                   },
                 ),

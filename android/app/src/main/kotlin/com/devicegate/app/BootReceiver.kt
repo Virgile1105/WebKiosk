@@ -8,6 +8,12 @@ import android.util.Log
 
 class BootReceiver : BroadcastReceiver() {
     private val TAG = "BootReceiver"
+    
+    companion object {
+        @Volatile
+        private var lastBootTime: Long = 0
+        private const val BOOT_COOLDOWN_MS = 60000L // 60 seconds
+    }
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "BootReceiver triggered with action: ${intent.action}")
@@ -15,7 +21,20 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || 
             intent.action == "android.intent.action.QUICKBOOT_POWERON" ||
             intent.action == Intent.ACTION_LOCKED_BOOT_COMPLETED) {
-            Log.d(TAG, "Boot completed, launching DeviceGate app")
+            
+            // Check if we already handled a boot event recently using static variable
+            // (SharedPreferences not available during LOCKED_BOOT_COMPLETED)
+            val currentTime = System.currentTimeMillis()
+            
+            if (currentTime - lastBootTime < BOOT_COOLDOWN_MS) {
+                Log.d(TAG, "Ignoring duplicate boot broadcast (${intent.action}) - already handled ${(currentTime - lastBootTime)}ms ago")
+                return
+            }
+            
+            // Save this boot time
+            lastBootTime = currentTime
+            
+            Log.d(TAG, "Boot completed (${intent.action}), launching DeviceGate app")
             
             // Small delay to ensure system is ready
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
