@@ -72,7 +72,7 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Shortcut'),
-        backgroundColor: Colors.blue,
+        backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         actions: [
           TextButton(

@@ -9,6 +9,7 @@ import 'add_apps_screen.dart';
 import 'network_status_screen.dart';
 import 'info_screen.dart';
 import 'configuration_screen.dart';
+import 'advanced_settings_screen.dart';
 import 'error_page.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -167,64 +168,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _removeDeviceOwner() async {
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Device Owner?'),
-        content: const Text(
-          'This will remove Device Owner status and allow factory reset.\n\n'
-          'The device will no longer be in kiosk mode.\n\n'
-          'Are you sure you want to continue?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) {
-      try {
-        final success = await platform.invokeMethod('removeDeviceOwner');
-        if (mounted) {
-          if (success) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Device Owner removed. You can now factory reset.'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to remove Device Owner'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        log('Error removing device owner: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -353,6 +296,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
+                  leading: const Icon(Icons.settings_applications, color: Colors.deepPurple),
+                  title: const Text('Advanced Settings'),
+                  subtitle: const Text('Developer options and USB settings'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const AdvancedSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
                   leading: const Icon(Icons.exit_to_app, color: Colors.orange),
                   title: const Text('Exit to Home'),
                   subtitle: const Text('Return to native Android home'),
@@ -360,14 +318,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onTap: () {
                     _exitToHome();
                   },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.admin_panel_settings_outlined, color: Colors.red),
-                  title: const Text('Remove Device Owner'),
-                  subtitle: const Text('Allow factory reset (removes kiosk mode)'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _removeDeviceOwner,
                 ),
                 const Divider(height: 1),
               ],

@@ -105,7 +105,7 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Apps'),
-        backgroundColor: Colors.blue,
+        backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         actions: [
           TextButton(

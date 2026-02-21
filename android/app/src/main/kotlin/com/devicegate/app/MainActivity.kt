@@ -35,8 +35,11 @@ import android.view.WindowManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.hardware.usb.UsbManager
 import android.os.UserManager
 import android.provider.Settings
+import android.accounts.AccountManager
+import android.net.Uri
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
@@ -113,6 +116,70 @@ class MainActivity : FlutterActivity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error auto-granting WRITE_SECURE_SETTINGS permission", e)
+            }
+            
+            // Auto-grant location permissions (Allow all the time + Use precise location)
+            try {
+                val admin = adminComponent
+                if (admin != null) {
+                    // Grant fine location (precise location)
+                    val fineLocationState = devicePolicyManager?.getPermissionGrantState(
+                        admin,
+                        packageName,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                    )
+                    if (fineLocationState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                        devicePolicyManager?.setPermissionGrantState(
+                            admin,
+                            packageName,
+                            android.Manifest.permission.ACCESS_FINE_LOCATION,
+                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                        Log.i(TAG, "ACCESS_FINE_LOCATION permission auto-granted on startup")
+                    } else {
+                        Log.d(TAG, "ACCESS_FINE_LOCATION permission already granted")
+                    }
+                    
+                    // Grant coarse location
+                    val coarseLocationState = devicePolicyManager?.getPermissionGrantState(
+                        admin,
+                        packageName,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                    if (coarseLocationState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                        devicePolicyManager?.setPermissionGrantState(
+                            admin,
+                            packageName,
+                            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                        Log.i(TAG, "ACCESS_COARSE_LOCATION permission auto-granted on startup")
+                    } else {
+                        Log.d(TAG, "ACCESS_COARSE_LOCATION permission already granted")
+                    }
+                    
+                    // Grant background location (Allow all the time) on Android 10+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val backgroundLocationState = devicePolicyManager?.getPermissionGrantState(
+                            admin,
+                            packageName,
+                            android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                        )
+                        if (backgroundLocationState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                            devicePolicyManager?.setPermissionGrantState(
+                                admin,
+                                packageName,
+                                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                                android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                            )
+                            Log.i(TAG, "ACCESS_BACKGROUND_LOCATION permission auto-granted on startup (Allow all the time)")
+                        } else {
+                            Log.d(TAG, "ACCESS_BACKGROUND_LOCATION permission already granted (Allow all the time)")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error auto-granting location permissions", e)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in grantRequiredPermissions", e)
@@ -281,6 +348,24 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error removing device owner", e)
                         result.error("REMOVE_OWNER_ERROR", e.message, null)
+                    }
+                }
+                "checkAccountsExist" -> {
+                    try {
+                        val accountsExist = checkAccountsExist()
+                        result.success(accountsExist)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking accounts", e)
+                        result.error("CHECK_ACCOUNTS_ERROR", e.message, null)
+                    }
+                }
+                "enableDeviceOwner" -> {
+                    try {
+                        val resultMap = enableDeviceOwner()
+                        result.success(resultMap)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error enabling device owner", e)
+                        result.error("ENABLE_OWNER_ERROR", e.message, null)
                     }
                 }
                 "disableSystemKeyboards" -> {
@@ -459,6 +544,117 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error getting Bluetooth devices", e)
                         result.error("BLUETOOTH_ERROR", e.message, null)
+                    }
+                }
+                "isDeveloperModeEnabled" -> {
+                    try {
+                        val enabled = isDeveloperModeEnabled()
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking developer mode", e)
+                        result.error("DEVELOPER_MODE_ERROR", e.message, null)
+                    }
+                }
+                "setDeveloperMode" -> {
+                    try {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        val success = setDeveloperMode(enabled)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting developer mode", e)
+                        result.error("DEVELOPER_MODE_ERROR", e.message, null)
+                    }
+                }
+                "isUsbDebuggingEnabled" -> {
+                    try {
+                        val enabled = isUsbDebuggingEnabled()
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking USB debugging", e)
+                        result.error("USB_DEBUGGING_ERROR", e.message, null)
+                    }
+                }
+                "setUsbDebugging" -> {
+                    try {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        val success = setUsbDebugging(enabled)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting USB debugging", e)
+                        result.error("USB_DEBUGGING_ERROR", e.message, null)
+                    }
+                }
+                "isUsbFileTransferEnabled" -> {
+                    try {
+                        val enabled = isUsbFileTransferEnabled()
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking USB file transfer", e)
+                        result.error("USB_FILE_TRANSFER_ERROR", e.message, null)
+                    }
+                }
+                "setUsbFileTransfer" -> {
+                    try {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        val success = setUsbFileTransfer(enabled)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting USB file transfer", e)
+                        result.error("USB_FILE_TRANSFER_ERROR", e.message, null)
+                    }
+                }
+                "uninstallApp" -> {
+                    try {
+                        val success = uninstallApp()
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error uninstalling app", e)
+                        result.error("UNINSTALL_ERROR", e.message, null)
+                    }
+                }
+                "factoryReset" -> {
+                    try {
+                        val success = factoryReset()
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error performing factory reset", e)
+                        result.error("FACTORY_RESET_ERROR", e.message, null)
+                    }
+                }
+                "isLocationPermissionGranted" -> {
+                    try {
+                        val granted = isLocationPermissionGranted()
+                        result.success(granted)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking location permission", e)
+                        result.error("LOCATION_PERMISSION_ERROR", e.message, null)
+                    }
+                }
+                "isBackgroundLocationGranted" -> {
+                    try {
+                        val granted = isBackgroundLocationGranted()
+                        result.success(granted)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking background location permission", e)
+                        result.error("LOCATION_PERMISSION_ERROR", e.message, null)
+                    }
+                }
+                "isPreciseLocationEnabled" -> {
+                    try {
+                        val enabled = isPreciseLocationEnabled()
+                        result.success(enabled)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking precise location", e)
+                        result.error("LOCATION_PERMISSION_ERROR", e.message, null)
+                    }
+                }
+                "requestLocationPermission" -> {
+                    try {
+                        requestLocationPermission()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error requesting location permission", e)
+                        result.error("LOCATION_PERMISSION_ERROR", e.message, null)
                     }
                 }
 
@@ -863,6 +1059,181 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error removing device owner", e)
             return false
+        }
+    }
+    
+    private fun checkAccountsExist(): Boolean {
+        return try {
+            val accountManager = getSystemService(Context.ACCOUNT_SERVICE) as AccountManager
+            val accounts = accountManager.accounts
+            val hasAccounts = accounts.isNotEmpty()
+            
+            if (hasAccounts) {
+                Log.i(TAG, "Found ${accounts.size} account(s) on device:")
+                accounts.forEach { account ->
+                    Log.i(TAG, "  - ${account.type}: ${account.name}")
+                }
+            } else {
+                Log.i(TAG, "No accounts found on device")
+            }
+            
+            hasAccounts
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking accounts", e)
+            false // Assume no accounts if we can't check
+        }
+    }
+    
+    private fun isDeviceRooted(): Boolean {
+        return try {
+            // Check for common root binaries
+            val paths = arrayOf(
+                "/system/app/Superuser.apk",
+                "/sbin/su",
+                "/system/bin/su",
+                "/system/xbin/su",
+                "/data/local/xbin/su",
+                "/data/local/bin/su",
+                "/system/sd/xbin/su",
+                "/system/bin/failsafe/su",
+                "/data/local/su",
+                "/su/bin/su"
+            )
+            
+            paths.any { path ->
+                try {
+                    java.io.File(path).exists()
+                } catch (e: Exception) {
+                    false
+                }
+            } || try {
+                // Try executing 'su' command
+                val process = Runtime.getRuntime().exec(arrayOf("which", "su"))
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                val output = reader.readText().trim()
+                reader.close()
+                process.waitFor()
+                output.isNotEmpty()
+            } catch (e: Exception) {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun enableDeviceOwner(): Map<String, Any> {
+        return try {
+            // Check if already device owner
+            if (isDeviceOwner()) {
+                Log.i(TAG, "Already a device owner")
+                return mapOf(
+                    "success" to true,
+                    "message" to "Already in Device Owner mode"
+                )
+            }
+            
+            // Check if accounts exist
+            if (checkAccountsExist()) {
+                Log.w(TAG, "Cannot set device owner: accounts exist on device")
+                return mapOf(
+                    "success" to false,
+                    "error" to "ACCOUNTS_EXIST",
+                    "message" to "Cannot enable Device Owner mode while accounts are logged in. Please remove all accounts from Settings and try again."
+                )
+            }
+            
+            val adminComponent = ComponentName(this, MyDeviceAdminReceiver::class.java)
+            val componentString = adminComponent.flattenToString()
+            
+            // Try root method first if device is rooted
+            val isRooted = isDeviceRooted()
+            Log.i(TAG, "Device rooted: $isRooted")
+            
+            if (isRooted) {
+                Log.i(TAG, "Attempting to set device owner via root...")
+                try {
+                    val rootCommand = "su -c 'dpm set-device-owner $componentString'"
+                    val process = Runtime.getRuntime().exec(rootCommand)
+                    val exitCode = process.waitFor()
+                    
+                    if (exitCode == 0) {
+                        Log.i(TAG, "Device owner set successfully via root")
+                        
+                        // Initialize and enable kiosk mode
+                        initDevicePolicyManager()
+                        enableKioskMode()
+                        setAsDefaultHome()
+                        grantRequiredPermissions()
+                        
+                        return mapOf(
+                            "success" to true,
+                            "message" to "Device Owner mode enabled successfully via root access"
+                        )
+                    } else {
+                        val errorReader = java.io.BufferedReader(java.io.InputStreamReader(process.errorStream))
+                        val errorOutput = errorReader.readText()
+                        errorReader.close()
+                        Log.e(TAG, "Root command failed. Exit code: $exitCode, Error: $errorOutput")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Root command exception", e)
+                }
+            }
+            
+            // Try to set device owner via shell command (likely to fail on non-rooted devices)
+            Log.i(TAG, "Attempting to set device owner via shell command")
+            
+            val command = "dpm set-device-owner $componentString"
+            
+            val process = Runtime.getRuntime().exec(command)
+            val exitCode = process.waitFor()
+            
+            if (exitCode == 0) {
+                Log.i(TAG, "Device owner set successfully")
+                
+                // Initialize and enable kiosk mode
+                initDevicePolicyManager()
+                enableKioskMode()
+                setAsDefaultHome()
+                grantRequiredPermissions()
+                
+                return mapOf(
+                    "success" to true,
+                    "message" to "Device Owner mode enabled successfully"
+                )
+            } else {
+                // Read error output
+                val errorReader = java.io.BufferedReader(java.io.InputStreamReader(process.errorStream))
+                val errorOutput = errorReader.readText()
+                errorReader.close()
+                
+                Log.e(TAG, "Failed to set device owner. Exit code: $exitCode, Error: $errorOutput")
+                
+                // Determine why it failed and provide specific guidance
+                val rootStatus = if (isRooted) "Device is rooted, but root command failed." else "Device is not rooted."
+                
+                // Return instructions for manual ADB setup
+                return mapOf(
+                    "success" to false,
+                    "error" to "REQUIRES_ADB",
+                    "message" to "⚠️ Android Security Restriction\n\n" +
+                                 "Apps cannot promote themselves to Device Owner mode due to Android security policies. $rootStatus\n\n" +
+                                 "✅ Manual Setup Required:\n\n" +
+                                 "1. Enable USB Debugging:\n   Settings → Developer Options → USB Debugging\n\n" +
+                                 "2. Connect device to computer via USB\n\n" +
+                                 "3. Open terminal/command prompt and run:\n   adb shell dpm set-device-owner com.devicegate.app/.MyDeviceAdminReceiver\n\n" +
+                                 "4. Restart DeviceGate app\n\n" +
+                                 "Note: Make sure no accounts are logged in and no work profiles exist before running the command."
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enabling device owner", e)
+            return mapOf(
+                "success" to false,
+                "error" to "EXCEPTION",
+                "message" to "Error: ${e.message ?: "Unknown error"}"
+            )
         }
     }
     
@@ -2206,6 +2577,400 @@ class MainActivity : FlutterActivity() {
         }
         
         return devicesList
+    }
+
+    // Developer mode and USB settings functions
+    
+    private fun isDeveloperModeEnabled(): Boolean {
+        return try {
+            val enabled = Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.DEVELOPMENT_SETTINGS_ENABLED,
+                0
+            )
+            Log.i(TAG, "Developer mode enabled: ${enabled == 1}")
+            enabled == 1
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking developer mode", e)
+            false
+        }
+    }
+    
+    private fun setDeveloperMode(enabled: Boolean): Boolean {
+        return try {
+            val admin = adminComponent
+            if (devicePolicyManager?.isDeviceOwnerApp(packageName) == true && admin != null) {
+                // Use DevicePolicyManager to set system setting
+                devicePolicyManager?.setSystemSetting(
+                    admin,
+                    Settings.Global.DEVELOPMENT_SETTINGS_ENABLED,
+                    if (enabled) "1" else "0"
+                )
+                Log.i(TAG, "Developer mode ${if (enabled) "enabled" else "disabled"} via DevicePolicyManager")
+                
+                // If disabling developer mode, also disable USB debugging
+                if (!enabled) {
+                    setUsbDebugging(false)
+                }
+                
+                true
+            } else {
+                Log.w(TAG, "Not device owner, cannot set developer mode")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting developer mode", e)
+            false
+        }
+    }
+    
+    private fun isUsbDebuggingEnabled(): Boolean {
+        return try {
+            val enabled = Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.ADB_ENABLED,
+                0
+            )
+            Log.i(TAG, "USB debugging enabled: ${enabled == 1}")
+            enabled == 1
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking USB debugging", e)
+            false
+        }
+    }
+    
+    private fun setUsbDebugging(enabled: Boolean): Boolean {
+        return try {
+            val admin = adminComponent
+            if (devicePolicyManager?.isDeviceOwnerApp(packageName) == true && admin != null) {
+                // Use DevicePolicyManager to set system setting
+                devicePolicyManager?.setSystemSetting(
+                    admin,
+                    Settings.Global.ADB_ENABLED,
+                    if (enabled) "1" else "0"
+                )
+                Log.i(TAG, "USB debugging ${if (enabled) "enabled" else "disabled"} via DevicePolicyManager")
+                true
+            } else {
+                Log.w(TAG, "Not device owner, cannot set USB debugging")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting USB debugging", e)
+            false
+        }
+    }
+    
+    private fun isUsbFileTransferEnabled(): Boolean {
+        return try {
+            // Check if USB is configured for file transfer (MTP mode)
+            // This is typically controlled by the USB connection mode
+            val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+            
+            if (usbManager == null) {
+                Log.w(TAG, "UsbManager not available")
+                return false
+            }
+            
+            // Try to check if MTP is enabled via system property
+            try {
+                val getProp = Runtime.getRuntime().exec("getprop sys.usb.config")
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(getProp.inputStream))
+                val config = reader.readLine() ?: ""
+                reader.close()
+                
+                val isMtpEnabled = config.contains("mtp") || config.contains("file_transfer")
+                Log.i(TAG, "USB config: $config, MTP enabled: $isMtpEnabled")
+                isMtpEnabled
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not read USB config property: ${e.message}")
+                // Fallback: assume enabled if developer mode is on
+                isDeveloperModeEnabled()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking USB file transfer", e)
+            false
+        }
+    }
+    
+    private fun setUsbFileTransfer(enabled: Boolean): Boolean {
+        return try {
+            // Setting USB file transfer mode requires changing USB configuration
+            // This can be done via system properties but requires shell access
+            
+            val command = if (enabled) {
+                "svc usb setFunctions mtp"
+            } else {
+                "svc usb setFunctions"
+            }
+            
+            Log.i(TAG, "Attempting to set USB mode with command: $command")
+            
+            val process = Runtime.getRuntime().exec(command)
+            val exitCode = process.waitFor()
+            
+            if (exitCode == 0) {
+                Log.i(TAG, "USB file transfer ${if (enabled) "enabled" else "disabled"} successfully")
+                true
+            } else {
+                val errorReader = java.io.BufferedReader(java.io.InputStreamReader(process.errorStream))
+                val errorOutput = errorReader.readText()
+                errorReader.close()
+                Log.w(TAG, "Failed to set USB mode, exit code: $exitCode, error: $errorOutput")
+                
+                // Alternative approach: try using setprop
+                try {
+                    val propertyCommand = if (enabled) {
+                        "setprop persist.sys.usb.config mtp,adb"
+                    } else {
+                        "setprop persist.sys.usb.config none"
+                    }
+                    
+                    val propProcess = Runtime.getRuntime().exec(propertyCommand)
+                    val propExitCode = propProcess.waitFor()
+                    
+                    if (propExitCode == 0) {
+                        Log.i(TAG, "USB file transfer ${if (enabled) "enabled" else "disabled"} via setprop")
+                        true
+                    } else {
+                        Log.w(TAG, "setprop also failed with exit code: $propExitCode")
+                        false
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "setprop approach failed: ${e.message}")
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting USB file transfer", e)
+            false
+        }
+    }
+
+    private fun uninstallApp(): Boolean {
+        return try {
+            Log.i(TAG, "Requesting app uninstall")
+            
+            // Create intent to open app info settings where user can uninstall
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            val uri = android.net.Uri.fromParts("package", packageName, null)
+            intent.data = uri
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            
+            // Start the app info activity
+            startActivity(intent)
+            
+            Log.i(TAG, "App info screen opened successfully")
+            
+            // Close the app to allow the user to uninstall
+            android.os.Handler(mainLooper).postDelayed({
+                Log.i(TAG, "Closing app to allow uninstall")
+                finishAndRemoveTask()
+            }, 500)
+            
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening app info", e)
+            false
+        }
+    }
+
+    private fun factoryReset(): Boolean {
+        return try {
+            Log.i(TAG, "Opening factory reset settings")
+            
+            var opened = false
+            
+            // Method 1: Try direct component name (works on most Samsung/stock Android)
+            if (!opened) {
+                try {
+                    val intent = Intent()
+                    intent.setClassName("com.android.settings", "com.android.settings.Settings\$ResetDashboardFragmentActivity")
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(intent)
+                    Log.i(TAG, "Opened via ResetDashboardFragmentActivity")
+                    opened = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "ResetDashboardFragmentActivity not available: ${e.message}")
+                }
+            }
+            
+            // Method 2: Try MasterClear activity (older Android versions)
+            if (!opened) {
+                try {
+                    val intent = Intent()
+                    intent.setClassName("com.android.settings", "com.android.settings.MasterClear")
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(intent)
+                    Log.i(TAG, "Opened via MasterClear activity")
+                    opened = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "MasterClear activity not available: ${e.message}")
+                }
+            }
+            
+            // Method 3: Try Settings with fragment parameter
+            if (!opened) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    intent.putExtra(":settings:show_fragment", "com.android.settings.MasterClear")
+                    startActivity(intent)
+                    Log.i(TAG, "Opened Settings with MasterClear fragment")
+                    opened = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Fragment navigation failed: ${e.message}")
+                }
+            }
+            
+            // Method 4: Try Privacy Settings (some Android versions)
+            if (!opened) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_PRIVACY_SETTINGS)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(intent)
+                    Log.i(TAG, "Opened Privacy Settings")
+                    opened = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Privacy Settings failed: ${e.message}")
+                }
+            }
+            
+            // Method 5: Final fallback - open main Settings
+            if (!opened) {
+                val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+                Log.i(TAG, "Opened main Settings as final fallback")
+            }
+            
+            // Close the app to allow the user to perform factory reset
+            android.os.Handler(mainLooper).postDelayed({
+                Log.i(TAG, "Closing app to allow factory reset")
+                finishAndRemoveTask()
+            }, 500)
+            
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening factory reset settings", e)
+            false
+        }
+    }
+
+    private fun isLocationPermissionGranted(): Boolean {
+        return try {
+            val fineLocation = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            val coarseLocation = checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            
+            val granted = fineLocation == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                         coarseLocation == android.content.pm.PackageManager.PERMISSION_GRANTED
+            
+            Log.i(TAG, "Location permission granted: $granted")
+            granted
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking location permission", e)
+            false
+        }
+    }
+
+    private fun isBackgroundLocationGranted(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val backgroundLocation = checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                val granted = backgroundLocation == android.content.pm.PackageManager.PERMISSION_GRANTED
+                Log.i(TAG, "Background location permission granted: $granted")
+                granted
+            } else {
+                // Before Android 10, background location is granted with foreground location
+                val fineGranted = isLocationPermissionGranted()
+                Log.i(TAG, "Background location (pre-Q): $fineGranted")
+                fineGranted
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking background location permission", e)
+            false
+        }
+    }
+
+    private fun isPreciseLocationEnabled(): Boolean {
+        return try {
+            val fineLocation = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            val enabled = fineLocation == android.content.pm.PackageManager.PERMISSION_GRANTED
+            Log.i(TAG, "Precise location enabled: $enabled")
+            enabled
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking precise location", e)
+            false
+        }
+    }
+
+    private fun requestLocationPermission() {
+        try {
+            Log.i(TAG, "Requesting location permissions")
+            
+            // Use Device Owner API to grant permissions without user interaction
+            val admin = adminComponent
+            if (devicePolicyManager?.isDeviceOwnerApp(packageName) == true && admin != null) {
+                try {
+                    // Grant location permissions as Device Owner
+                    devicePolicyManager?.setPermissionGrantState(
+                        admin,
+                        packageName,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                        android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                    )
+                    devicePolicyManager?.setPermissionGrantState(
+                        admin,
+                        packageName,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                        android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                    )
+                    
+                    // Grant background location on Android 10+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        devicePolicyManager?.setPermissionGrantState(
+                            admin,
+                            packageName,
+                            android.Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                    }
+                    
+                    Log.i(TAG, "Location permissions granted via Device Owner")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error granting permissions via Device Owner: $e")
+                    // Fallback to requesting normally
+                    requestLocationPermissionsNormally()
+                }
+            } else {
+                // Not Device Owner, request normally
+                requestLocationPermissionsNormally()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting location permission", e)
+        }
+    }
+    
+    private fun requestLocationPermissionsNormally() {
+        try {
+            val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                    android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                )
+            } else {
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            }
+            
+            requestPermissions(permissions, 1001)
+            Log.i(TAG, "Requested location permissions via normal flow")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error requesting permissions normally", e)
+        }
     }
 
     private fun applySystemUiMode(alwaysShowTopBar: Boolean) {
