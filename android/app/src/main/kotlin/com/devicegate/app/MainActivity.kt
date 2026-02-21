@@ -1587,12 +1587,40 @@ class MainActivity : FlutterActivity() {
     /**
      * Aggressively hides the system keyboard IME bar from appearing (even on focus)
      * BUT allows hardware input devices like barcode scanners to work
-     * Strategy: Detect if current IME is a hardware device (Honeywell, Datalogic, etc.)
-     * and only block soft keyboards
+     * Strategy: If a physical keyboard/scanner is connected via Bluetooth,
+     * block ALL soft keyboards. Otherwise allow soft keyboards.
      */
     private fun hideImeAggressively() {
         try {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            
+            // TIER 1: Check if a physical keyboard/scanner is connected (Android's Configuration.keyboard)
+            val hasPhysicalInputDevice = isPhysicalKeyboardConnected()
+            
+            if (hasPhysicalInputDevice) {
+                // Physical keyboard/scanner connected - block ALL soft keyboards
+                Log.d(TAG, "TIER 1: Physical keyboard detected (KEYBOARD_QWERTY) - blocking all soft keyboards")
+                blockAllSoftKeyboards(imm)
+                return
+            }
+            
+            // TIER 2: No physical keyboard - check if any Bluetooth device is ACTIVELY connected
+            val bluetoothDevices = getBluetoothDevices()
+            val connectedBluetoothDevices = bluetoothDevices.filter { it["connected"] == "Connected" }
+            val hasConnectedBluetoothDevice = connectedBluetoothDevices.isNotEmpty()
+            
+            Log.d(TAG, "Bluetooth check: ${bluetoothDevices.size} paired, ${connectedBluetoothDevices.size} connected")
+            
+            if (!hasConnectedBluetoothDevice) {
+                // No physical keyboard AND no connected Bluetooth devices - block ALL soft keyboards
+                Log.d(TAG, "TIER 2: No physical keyboard, no connected Bluetooth devices - blocking all soft keyboards")
+                blockAllSoftKeyboards(imm)
+                return
+            }
+            
+            // TIER 3: No physical keyboard BUT Bluetooth device actively connected - use IME name-based filtering
+            val deviceNames = connectedBluetoothDevices.mapNotNull { it["name"] }.joinToString(", ")
+            Log.d(TAG, "TIER 3: No physical keyboard, but ${connectedBluetoothDevices.size} Bluetooth device(s) connected ($deviceNames) - using IME filtering")
             
             // Get current active input method
             val currentIme = android.provider.Settings.Secure.getString(
@@ -1625,28 +1653,85 @@ class MainActivity : FlutterActivity() {
             } else {
                 // It's a soft keyboard - hide it aggressively
                 Log.d(TAG, "Detected soft keyboard IME: $currentIme - blocking")
-                
-                // VERY AGGRESSIVE: Set multiple window flags to prevent IME bar
-                window?.setSoftInputMode(
-                    android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
-                    android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-                )
-                
-                // Additional aggressive flag: Add FLAG_ALT_FOCUSABLE_IM to prevent IME bar
-                window?.setFlags(
-                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
-                    android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-                )
-                
-                // Also hide any currently shown soft keyboard
-                currentFocus?.let { focus ->
-                    imm.hideSoftInputFromWindow(focus.windowToken, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
-                }
-                
-                Log.d(TAG, "Soft keyboard blocked with aggressive IME hiding (FLAG_ALT_FOCUSABLE_IM)")
+                blockAllSoftKeyboards(imm)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in hideImeAggressively", e)
+        }
+    }
+    
+    /**
+     * Helper to block all soft keyboards with aggressive window flags
+     */
+    private fun blockAllSoftKeyboards(imm: android.view.inputmethod.InputMethodManager) {
+        // VERY AGGRESSIVE: Set multiple window flags to prevent IME bar
+        window?.setSoftInputMode(
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+        )
+        
+        // Additional aggressive flag: Add FLAG_ALT_FOCUSABLE_IM to prevent IME bar
+        window?.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+            android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        )
+        
+        // Also hide any currently shown soft keyboard
+        currentFocus?.let { focus ->
+            imm.hideSoftInputFromWindow(focus.windowToken, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
+        }
+        
+        Log.d(TAG, "All soft keyboards blocked with aggressive IME hiding")
+    }
+    
+    /**
+     * Checks if Android reports a physical keyboard is connected.
+     * This uses Android's system-level keyboard detection, which is set when
+     * devices like barcode scanners register themselves as HID keyboards.
+     */
+    private fun isPhysicalKeyboardConnected(): Boolean {
+        try {
+            // Check Android's built-in physical keyboard detection
+            val config = resources.configuration
+            val keyboardType = config.keyboard
+            
+            // Log keyboard configuration for debugging
+            val keyboardTypeName = when (keyboardType) {
+                android.content.res.Configuration.KEYBOARD_NOKEYS -> "KEYBOARD_NOKEYS"
+                android.content.res.Configuration.KEYBOARD_QWERTY -> "KEYBOARD_QWERTY"
+                android.content.res.Configuration.KEYBOARD_12KEY -> "KEYBOARD_12KEY"
+                else -> "UNKNOWN ($keyboardType)"
+            }
+            
+            // Also log which input devices Android recognizes as keyboards
+            val inputDevices = android.view.InputDevice.getDeviceIds()
+            val keyboardDevices = mutableListOf<String>()
+            
+            for (deviceId in inputDevices) {
+                val device = android.view.InputDevice.getDevice(deviceId)
+                if (device != null) {
+                    // Check if device has keyboard capability
+                    val sources = device.sources
+                    val isKeyboard = (sources and android.view.InputDevice.SOURCE_KEYBOARD) != 0
+                    val isExternal = !device.isVirtual
+                    
+                    if (isKeyboard && isExternal) {
+                        keyboardDevices.add("${device.name} (id=$deviceId)")
+                    }
+                }
+            }
+            
+            if (keyboardDevices.isNotEmpty()) {
+                Log.d(TAG, "Physical keyboard check: $keyboardTypeName, external keyboards: $keyboardDevices")
+            } else {
+                Log.d(TAG, "Physical keyboard check: $keyboardTypeName, no external keyboards detected")
+            }
+            
+            // Return true only if Android reports a physical keyboard is present
+            return keyboardType != android.content.res.Configuration.KEYBOARD_NOKEYS
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for physical keyboard", e)
+            return false
         }
     }
 
