@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/shortcut_item.dart';
+import '../generated/l10n/app_localizations.dart';
 
 class AddShortcutScreen extends StatefulWidget {
   const AddShortcutScreen({super.key});
@@ -37,8 +38,9 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
     var iconUrl = _iconUrlController.text.trim();
 
     if (name.isEmpty || url.isEmpty) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a name and URL')),
+        SnackBar(content: Text(l10n.pleaseEnterNameAndUrl)),
       );
       return;
     }
@@ -69,17 +71,18 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Shortcut'),
+        title: Text(l10n.addNewShortcut),
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         actions: [
           TextButton(
             onPressed: _saveShortcut,
-            child: const Text(
-              'SAVE',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            child: Text(
+              l10n.save.toUpperCase(),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -88,42 +91,42 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
         padding: const EdgeInsets.all(16.0),
         children: [
           // Name field
-          const Text(
-            'Name',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          Text(
+            l10n.name,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(
-              hintText: 'e.g., Google',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: InputDecoration(
+              hintText: l10n.nameHint,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
           ),
           const SizedBox(height: 24),
 
           // Website URL field
-          const Text(
-            'Website URL',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          Text(
+            l10n.websiteUrl,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _urlController,
-            decoration: const InputDecoration(
-              hintText: 'https://www.google.com',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: InputDecoration(
+              hintText: l10n.websiteUrlHint,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
             keyboardType: TextInputType.url,
           ),
           const SizedBox(height: 24),
 
           // Icon selection
-          const Text(
-            'Icon',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          Text(
+            l10n.icon,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
@@ -135,7 +138,7 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
             items: _availableAssetIcons.map((icon) {
               return DropdownMenuItem<String>(
                 value: icon,
-                child: Text(icon.isEmpty ? 'Use URL (below)' : icon.replaceFirst('assets/icon/', '')),
+                child: Text(icon.isEmpty ? l10n.useUrlBelow : icon.replaceFirst('assets/icon/', '')),
               );
             }).toList(),
             onChanged: (value) {
@@ -150,16 +153,16 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
           const SizedBox(height: 16),
 
           // Icon URL field
-          const Text(
-            'Icon URL (optional)',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          Text(
+            l10n.iconUrlOptional,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _iconUrlController,
             enabled: _selectedAssetIcon.isEmpty,
             decoration: InputDecoration(
-              hintText: _selectedAssetIcon.isNotEmpty ? 'Using asset icon' : 'Leave empty for auto-detect',
+              hintText: _selectedAssetIcon.isNotEmpty ? l10n.usingAssetIcon : l10n.leaveEmptyForAutoDetect,
               border: const OutlineInputBorder(),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               filled: _selectedAssetIcon.isNotEmpty,
@@ -170,8 +173,8 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
           const SizedBox(height: 8),
           Text(
             _selectedAssetIcon.isNotEmpty
-                ? 'Using selected asset icon.'
-                : 'Leave icon URL empty to use the site\'s favicon (or default icon if unavailable).',
+                ? l10n.usingSelectedAssetIcon
+                : l10n.leaveIconUrlEmpty,
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 24),
@@ -179,18 +182,18 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
           // Advanced options header
           const Divider(),
           const SizedBox(height: 8),
-          const Text(
-            'Advanced Options',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text(
+            l10n.advancedOptions,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
 
           // Disable Keyboard switch
           SwitchListTile(
-            title: const Text('Disable Keyboard'),
-            subtitle: const Text(
-              'Prevent keyboard from appearing on input fields',
-              style: TextStyle(fontSize: 12),
+            title: Text(l10n.disableKeyboard),
+            subtitle: Text(
+              l10n.disableKeyboardDesc,
+              style: const TextStyle(fontSize: 12),
             ),
             value: _disableAutoFocus,
             onChanged: (value) {
@@ -203,10 +206,10 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
 
           // Use Custom Keyboard switch
           SwitchListTile(
-            title: const Text('Use Custom Keyboard'),
-            subtitle: const Text(
-              'Show numeric keyboard in bottom-left corner (autofocus can be controlled separately)',
-              style: TextStyle(fontSize: 12),
+            title: Text(l10n.useCustomKeyboard),
+            subtitle: Text(
+              l10n.useCustomKeyboardDesc,
+              style: const TextStyle(fontSize: 12),
             ),
             value: _useCustomKeyboard,
             onChanged: (value) {
@@ -219,10 +222,10 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
 
           // Disable Copy/Paste switch
           SwitchListTile(
-            title: const Text('Disable Copy/Paste'),
-            subtitle: const Text(
-              'Prevent copying and pasting in input fields',
-              style: TextStyle(fontSize: 12),
+            title: Text(l10n.disableCopyPaste),
+            subtitle: Text(
+              l10n.disableCopyPasteDesc,
+              style: const TextStyle(fontSize: 12),
             ),
             value: _disableCopyPaste,
             onChanged: (value) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'error_page.dart';
 
 class ConfigurationScreen extends StatefulWidget {
@@ -21,25 +22,29 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
   int? _deviceMaxTimeout; // Device's maximum supported timeout
 
   // Base timeout options in milliseconds (without maximum)
-  final Map<String, int> _baseTimeoutOptions = {
-    '15 secondes': 15000,
-    '30 secondes': 30000,
-    '1 minute': 60000,
-    '2 minutes': 120000,
-    '5 minutes': 300000,
-    '10 minutes': 600000,
-  };
+  Map<String, int> _getBaseTimeoutOptions(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return {
+      l10n.fifteenSeconds: 15000,
+      l10n.thirtySeconds: 30000,
+      l10n.oneMinute: 60000,
+      l10n.twoMinutes: 120000,
+      l10n.fiveMinutes: 300000,
+      l10n.tenMinutes: 600000,
+    };
+  }
   
   // Dynamic timeout options (includes device maximum)
-  Map<String, int> get _timeoutOptions {
-    final options = Map<String, int>.from(_baseTimeoutOptions);
+  Map<String, int> _getTimeoutOptions(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final options = Map<String, int>.from(_getBaseTimeoutOptions(context));
     
     // Always include 30 minutes
-    options['30 minutes'] = 1800000;
+    options[l10n.thirtyMinutes] = 1800000;
     
     // Add device maximum if detected and greater than 30 minutes
     if (_deviceMaxTimeout != null && _deviceMaxTimeout! > 1800000) {
-      final maxLabel = _getTimeoutLabel(_deviceMaxTimeout!);
+      final maxLabel = _getTimeoutLabel(context, _deviceMaxTimeout!);
       options[maxLabel] = _deviceMaxTimeout!;
     }
     
@@ -204,16 +209,19 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de configuration',
-              errorMessage: 'Impossible de sauvegarder le paramètre de la barre supérieure',
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                Navigator.of(context).pop();
-                _saveTopBarSetting(value);
-              },
-            ),
+            builder: (context) {
+              final l10n = AppLocalizations.of(context)!;
+              return ErrorPage(
+                errorTitle: l10n.configurationError,
+                errorMessage: l10n.couldNotSaveTopBarSetting,
+                error: error,
+                stackTrace: stackTrace,
+                onRetry: () {
+                  Navigator.of(context).pop();
+                  _saveTopBarSetting(value);
+                },
+              );
+            },
           ),
         );
       }
@@ -250,16 +258,19 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de configuration',
-              errorMessage: 'Impossible de sauvegarder le paramètre de rotation automatique',
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                Navigator.of(context).pop();
-                _saveAutoRotationSetting(value);
-              },
-            ),
+            builder: (context) {
+              final l10n = AppLocalizations.of(context)!;
+              return ErrorPage(
+                errorTitle: l10n.configurationError,
+                errorMessage: l10n.couldNotSaveAutoRotationSetting,
+                error: error,
+                stackTrace: stackTrace,
+                onRetry: () {
+                  Navigator.of(context).pop();
+                  _saveAutoRotationSetting(value);
+                },
+              );
+            },
           ),
         );
       }
@@ -311,16 +322,19 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de configuration',
-              errorMessage: 'Impossible de sauvegarder le délai de mise en veille de l\'écran',
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                Navigator.of(context).pop();
-                _saveScreenTimeout(timeout);
-              },
-            ),
+            builder: (context) {
+              final l10n = AppLocalizations.of(context)!;
+              return ErrorPage(
+                errorTitle: l10n.configurationError,
+                errorMessage: l10n.couldNotSaveScreenTimeout,
+                error: error,
+                stackTrace: stackTrace,
+                onRetry: () {
+                  Navigator.of(context).pop();
+                  _saveScreenTimeout(timeout);
+                },
+              );
+            },
           ),
         );
       }
@@ -339,14 +353,15 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
     }
   }
 
-  String _getTimeoutLabel(int timeout) {
+  String _getTimeoutLabel(BuildContext context, int timeout) {
+    final l10n = AppLocalizations.of(context)!;
     // Check for "never" (Integer.MAX_VALUE)
     if (timeout >= 2147483000) { // Close to Integer.MAX_VALUE
-      return 'Jamais';
+      return l10n.never;
     }
     
     // First check if it matches our predefined options
-    for (var entry in _timeoutOptions.entries) {
+    for (var entry in _getTimeoutOptions(context).entries) {
       if (entry.value == timeout) {
         return entry.key;
       }
@@ -357,23 +372,24 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       return '$timeout ms';
     } else if (timeout < 60000) {
       final seconds = (timeout / 1000).round();
-      return '$seconds seconde${seconds > 1 ? 's' : ''}';
+      return '$seconds ${seconds > 1 ? l10n.seconds : l10n.second}';
     } else if (timeout < 3600000) {
       final minutes = (timeout / 60000).round();
-      return '$minutes minute${minutes > 1 ? 's' : ''}';
+      return '$minutes ${minutes > 1 ? l10n.minutes : l10n.minute}';
     } else {
       final hours = (timeout / 3600000).round();
-      return '$hours heure${hours > 1 ? 's' : ''}';
+      return '$hours ${hours > 1 ? l10n.hours : l10n.hour}';
     }
   }
 
   void _showTimeoutDialog() {
+    final l10n = AppLocalizations.of(context)!;
     // Build the list of timeout options
     final optionsList = <Widget>[];
     final addedValues = <int>{};
     
     // Add all predefined options
-    for (var entry in _timeoutOptions.entries) {
+    for (var entry in _getTimeoutOptions(context).entries) {
       addedValues.add(entry.value);
       optionsList.add(
         RadioListTile<int>(
@@ -393,11 +409,11 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
     
     // If current Android value is not in our list, add it
     if (!addedValues.contains(_screenTimeout)) {
-      final customLabel = _getTimeoutLabel(_screenTimeout);
+      final customLabel = _getTimeoutLabel(context, _screenTimeout);
       optionsList.insert(0, 
         RadioListTile<int>(
-          title: Text('$customLabel (actuel)'),
-          subtitle: const Text('Valeur système actuelle'),
+          title: Text(l10n.currently(customLabel)),
+          subtitle: Text(l10n.currentSystemValue),
           value: _screenTimeout,
           groupValue: _screenTimeout,
           onChanged: (value) {
@@ -414,7 +430,7 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Mise en veille de l\'écran'),
+        title: Text(l10n.screenTimeout),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -424,7 +440,7 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
+            child: Text(l10n.cancelButton),
           ),
         ],
       ),
@@ -455,9 +471,10 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Configuration'),
+        title: Text(l10n.configuration),
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -494,7 +511,7 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            'Paramètres personnalisés',
+                            l10n.customDisplaySettings,
                             style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -525,17 +542,17 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                         child: SwitchListTile(
                           value: _alwaysShowTopBar,
                           onChanged: _saveTopBarSetting,
-                          title: const Text(
-                            'Barre supérieure toujours visible',
-                            style: TextStyle(
+                          title: Text(
+                            l10n.topBarAlwaysVisible,
+                            style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           subtitle: Text(
                             _alwaysShowTopBar
-                                ? 'La barre d\'état Android reste toujours affichée'
-                                : 'La barre d\'état est masquée (glisser vers le bas pour afficher)',
+                                ? l10n.topBarShownDesc
+                                : l10n.topBarHiddenDesc,
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey.shade600,
@@ -566,17 +583,17 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                         child: SwitchListTile(
                           value: _autoRotation,
                           onChanged: _saveAutoRotationSetting,
-                          title: const Text(
-                            'Rotation automatique',
-                            style: TextStyle(
+                          title: Text(
+                            l10n.autoRotation,
+                            style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           subtitle: Text(
                             _autoRotation
-                                ? 'L\'écran pivote automatiquement selon l\'orientation'
-                                : 'Verrouillé en ${_lockedOrientation == "landscape" ? "paysage" : "portrait"}',
+                                ? l10n.screenRotatesAutomatically
+                                : l10n.lockedIn(_lockedOrientation == "landscape" ? l10n.landscape : l10n.portrait),
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey.shade600,
@@ -618,15 +635,15 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                               size: 24,
                             ),
                           ),
-                          title: const Text(
-                            'Mise en veille de l\'écran',
-                            style: TextStyle(
+                          title: Text(
+                            l10n.screenTimeout,
+                            style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           subtitle: Text(
-                            'Actuellement: ${_getTimeoutLabel(_screenTimeout)}',
+                            l10n.currently(_getTimeoutLabel(context, _screenTimeout)),
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.grey.shade600,

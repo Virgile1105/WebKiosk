@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'kiosk_webview_screen.dart';
 import 'settings_screen.dart';
 import 'password_dialog.dart';
@@ -73,6 +74,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       log('Critical error loading data: $error');
       log('Stack trace: $stackTrace');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         setState(() {
           _isLoading = false;
         });
@@ -80,8 +82,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de chargement',
-              errorMessage: 'Impossible de charger les données de l\'application',
+              errorTitle: l10n.loadingError,
+              errorMessage: l10n.cannotLoadAppData,
               error: error,
               stackTrace: stackTrace,
               onRetry: () {
@@ -146,6 +148,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _saveShortcuts() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('shortcuts', ShortcutItem.encodeList(_shortcuts));
@@ -155,7 +158,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors de la sauvegarde: $error'),
+            content: Text(l10n.saveError(error.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -237,8 +240,9 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           });
           
           if (mounted) {
+            final l10n = AppLocalizations.of(context)!;
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${result.name} added to home')),
+              SnackBar(content: Text('${result.name} ${l10n.addedToHome}')),
             );
           }
         } else if (result is Map<String, Map<String, dynamic>>) {
@@ -250,6 +254,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _handleAppChanges(Map<String, Map<String, dynamic>> changes) async {
+    final l10n = AppLocalizations.of(context)!;
     int addedCount = 0;
     int removedCount = 0;
 
@@ -286,8 +291,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
     if (mounted) {
       final message = <String>[];
-      if (addedCount > 0) message.add('$addedCount app${addedCount > 1 ? 's' : ''} added');
-      if (removedCount > 0) message.add('$removedCount app${removedCount > 1 ? 's' : ''} removed');
+      if (addedCount > 0) message.add(l10n.appsAdded(addedCount.toString()));
+      if (removedCount > 0) message.add(l10n.appsRemoved(removedCount.toString()));
       
       if (message.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -309,6 +314,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _showAddAppsDialog() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       // Get list of installed apps from native
       final List<dynamic> apps = await platform.invokeMethod('getInstalledApps');
@@ -319,7 +325,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            title: const Text('Select App to Add'),
+            title: Text(l10n.selectAppToAdd),
             content: SizedBox(
               width: double.maxFinite,
               height: 400,
@@ -365,7 +371,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+                child: Text(l10n.cancel),
               ),
             ],
           );
@@ -375,7 +381,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       log('Error getting installed apps: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading apps: $e')),
+          SnackBar(content: Text('${l10n.errorLoadingApps}: $e')),
         );
       }
     }
@@ -400,13 +406,15 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     await _saveShortcuts();
     
     if (mounted) {
+      final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$appName added to home')),
+        SnackBar(content: Text('$appName ${l10n.addedToHome}')),
       );
     }
   }
 
   Future<void> _addShortcut() async {
+    final l10n = AppLocalizations.of(context)!;
     final nameController = TextEditingController();
     final urlController = TextEditingController(text: 'https://');
     final iconUrlController = TextEditingController();
@@ -425,40 +433,40 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Add New Shortcut'),
+          title: Text(l10n.addNewShortcut),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Name',
-                    hintText: 'e.g., Google',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.name,
+                    hintText: l10n.nameHint,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: urlController,
-                  decoration: const InputDecoration(
-                    labelText: 'Website URL',
-                    hintText: 'https://www.google.com',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.websiteUrl,
+                    hintText: l10n.websiteUrlHint,
+                    border: const OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
                   value: selectedAssetIcon,
-                  decoration: const InputDecoration(
-                    labelText: 'Icon',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: l10n.icon,
+                    border: const OutlineInputBorder(),
                   ),
                   items: availableAssetIcons.map((icon) {
                     return DropdownMenuItem<String>(
                       value: icon,
-                      child: Text(icon.isEmpty ? 'Use URL (below)' : icon.replaceFirst('assets/icon/', '')),
+                      child: Text(icon.isEmpty ? l10n.useUrlBelow : icon.replaceFirst('assets/icon/', '')),
                     );
                   }).toList(),
                   onChanged: (value) {
@@ -475,8 +483,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                   controller: iconUrlController,
                   enabled: selectedAssetIcon.isEmpty, // Disable when asset icon is selected
                   decoration: InputDecoration(
-                    labelText: 'Icon URL (optional)',
-                    hintText: selectedAssetIcon.isNotEmpty ? 'Using asset icon' : 'Leave empty for auto-detect',
+                    labelText: l10n.iconUrlOptional,
+                    hintText: selectedAssetIcon.isNotEmpty ? l10n.usingAssetIcon : l10n.leaveEmptyForAutoDetect,
                     border: const OutlineInputBorder(),
                     filled: selectedAssetIcon.isNotEmpty,
                     fillColor: selectedAssetIcon.isNotEmpty ? Colors.grey.shade100 : null,
@@ -486,16 +494,16 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                 const SizedBox(height: 8),
                 Text(
                   selectedAssetIcon.isNotEmpty
-                      ? 'Using selected asset icon.'
-                      : 'Leave icon URL empty to use the site\'s favicon (or default icon if unavailable).',
+                      ? l10n.usingSelectedAssetIcon
+                      : l10n.leaveIconUrlEmpty,
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  title: const Text('Disable Keyboard'),
-                  subtitle: const Text(
-                    'Prevent keyboard from appearing on input fields',
-                    style: TextStyle(fontSize: 12),
+                  title: Text(l10n.disableKeyboard),
+                  subtitle: Text(
+                    l10n.disableKeyboardDesc,
+                    style: const TextStyle(fontSize: 12),
                   ),
                   value: disableAutoFocus,
                   onChanged: (value) {
@@ -506,10 +514,10 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 SwitchListTile(
-                  title: const Text('Use Custom Keyboard'),
-                  subtitle: const Text(
-                    'Show numeric keyboard in bottom-left corner (autofocus can be controlled separately)',
-                    style: TextStyle(fontSize: 12),
+                  title: Text(l10n.useCustomKeyboard),
+                  subtitle: Text(
+                    l10n.useCustomKeyboardDesc,
+                    style: const TextStyle(fontSize: 12),
                   ),
                   value: useCustomKeyboard,
                   onChanged: (value) {
@@ -520,10 +528,10 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 SwitchListTile(
-                  title: const Text('Disable Copy/Paste'),
-                  subtitle: const Text(
-                    'Prevent copying and pasting in input fields',
-                    style: TextStyle(fontSize: 12),
+                  title: Text(l10n.disableCopyPaste),
+                  subtitle: Text(
+                    l10n.disableCopyPasteDesc,
+                    style: const TextStyle(fontSize: 12),
                   ),
                   value: disableCopyPaste,
                   onChanged: (value) {
@@ -539,11 +547,11 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(l10n.cancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Add'),
+              child: Text(l10n.add),
             ),
           ],
         ),
@@ -557,7 +565,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
       if (name.isEmpty || url.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a name and URL')),
+          SnackBar(content: Text(l10n.pleaseEnterNameAndUrl)),
         );
         return;
       }
@@ -601,7 +609,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Shortcut "$name" added!')),
+          SnackBar(content: Text(l10n.shortcutAdded(name))),
         );
       }
     }
@@ -647,20 +655,21 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   Future<void> _deleteShortcut(ShortcutItem shortcut) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Shortcut'),
-        content: Text('Are you sure you want to delete "${shortcut.name}"?'),
+        title: Text(l10n.deleteShortcut),
+        content: Text(l10n.confirmDeleteShortcut(shortcut.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -674,13 +683,14 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('"${shortcut.name}" deleted')),
+          SnackBar(content: Text(l10n.shortcutDeleted(shortcut.name))),
         );
       }
     }
   }
 
   void _showShortcutOptions(ShortcutItem shortcut) {
+    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       builder: (context) => SafeArea(
@@ -689,7 +699,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.open_in_browser),
-              title: const Text('Open'),
+              title: Text(l10n.open),
               onTap: () {
                 Navigator.pop(context);
                 _openShortcut(shortcut);
@@ -697,7 +707,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              title: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(context);
                 _deleteShortcut(shortcut);
@@ -710,6 +720,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   }
 
   void _openShortcut(ShortcutItem shortcut) async {
+    final l10n = AppLocalizations.of(context)!;
     // Check if this is an app shortcut (starts with app://)
     if (shortcut.url.startsWith('app://')) {
       final packageName = shortcut.url.substring(6); // Remove 'app://' prefix
@@ -718,7 +729,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         if (!success) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Failed to launch ${shortcut.name}')),
+              SnackBar(content: Text(l10n.failedToLaunch(shortcut.name))),
             );
           }
         }
@@ -726,7 +737,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         log('Error launching app: $e');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error launching ${shortcut.name}: $e')),
+            SnackBar(content: Text(l10n.errorLaunching(shortcut.name, e.toString()))),
           );
         }
       }
@@ -745,6 +756,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         }
       }
       
+      log('Opening shortcut: ${updatedShortcut.name} with URL: ${updatedShortcut.url}');
+      log('Shortcut settings: useCustomKeyboard=${updatedShortcut.useCustomKeyboard}, disableAutoFocus=${updatedShortcut.disableAutoFocus}, disableCopyPaste=${updatedShortcut.disableCopyPaste}');
       Navigator.push(
         context,
         MaterialPageRoute(

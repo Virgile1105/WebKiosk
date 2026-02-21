@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'error_page.dart';
 
 class InfoScreen extends StatefulWidget {
@@ -19,9 +20,9 @@ class InfoScreen extends StatefulWidget {
 
 class _InfoScreenState extends State<InfoScreen> {
   static const platform = MethodChannel('devicegate.app/shortcut');
-  String _ipAddress = 'Loading...';
+  String? _ipAddress;
   List<Map<String, dynamic>> _bluetoothDevices = [];
-  String _androidDeviceModel = 'Loading...';
+  String? _androidDeviceModel;
   bool _isLoadingBluetooth = true;
 
   @override
@@ -34,7 +35,7 @@ class _InfoScreenState extends State<InfoScreen> {
     try {
       // Get IP address from WiFi info
       final wifiInfo = await platform.invokeMethod('getWifiInfo');
-      String ipAddress = 'Not available';
+      String? ipAddress;
       
       if (wifiInfo != null && wifiInfo is Map) {
         if (wifiInfo['currentNetwork'] != null) {
@@ -65,7 +66,7 @@ class _InfoScreenState extends State<InfoScreen> {
       }
 
       // Get Android device model
-      String androidDeviceModel = 'Not available';
+      String? androidDeviceModel;
       try {
         final deviceModel = await platform.invokeMethod('getDeviceModel');
         if (deviceModel != null && deviceModel is Map) {
@@ -89,16 +90,17 @@ class _InfoScreenState extends State<InfoScreen> {
       log('Error loading device info: $error');
       if (mounted) {
         setState(() {
-          _ipAddress = 'Error loading';
+          _ipAddress = null;
           _bluetoothDevices = [];
-          _androidDeviceModel = 'Error loading';
+          _androidDeviceModel = null;
           _isLoadingBluetooth = false;
         });
+        final l10n = AppLocalizations.of(context)!;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de chargement',
-              errorMessage: 'Impossible de charger les informations de l\'appareil',
+              errorTitle: l10n.errorLoadingDeviceInfo,
+              errorMessage: l10n.couldNotLoadDeviceInfo,
               error: error,
               stackTrace: stackTrace,
               onRetry: () {
@@ -145,11 +147,12 @@ class _InfoScreenState extends State<InfoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Information',
-          style: TextStyle(
+        title: Text(
+          l10n.information,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 22,
             fontWeight: FontWeight.w500,
@@ -168,9 +171,9 @@ class _InfoScreenState extends State<InfoScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               color: Colors.grey[100],
-              child: const Text(
-                'Device & Application Information',
-                style: TextStyle(
+              child: Text(
+                l10n.deviceInfo,
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                   color: Colors.black87,
@@ -179,15 +182,13 @@ class _InfoScreenState extends State<InfoScreen> {
             ),
             const SizedBox(height: 16),
             // Info rows
-            _buildInfoRow('Application Name', 'DeviceGate'),
+            _buildInfoRow(l10n.appVersion, widget.appVersion.isNotEmpty ? widget.appVersion : l10n.loadingApps),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow('Version', widget.appVersion.isNotEmpty ? widget.appVersion : 'Loading...'),
+            _buildInfoRow(l10n.deviceName, widget.deviceName),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow('Device Name', widget.deviceName),
+            _buildInfoRow(l10n.androidModel, _androidDeviceModel ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow('Android Device', _androidDeviceModel),
-            const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow('IP Address', _ipAddress),
+            _buildInfoRow(l10n.ipAddress, _ipAddress ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),
             
             // Bluetooth Devices Section
@@ -201,7 +202,7 @@ class _InfoScreenState extends State<InfoScreen> {
                       SizedBox(
                         width: 160,
                         child: Text(
-                          'Bluetooth Devices',
+                          l10n.bluetoothDevices,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -211,17 +212,17 @@ class _InfoScreenState extends State<InfoScreen> {
                       ),
                       Expanded(
                         child: _isLoadingBluetooth
-                            ? const Text(
-                                'Loading...',
-                                style: TextStyle(
+                            ? Text(
+                                l10n.loadingApps,
+                                style: const TextStyle(
                                   fontSize: 16,
                                   color: Colors.black87,
                                 ),
                               )
                             : _bluetoothDevices.isEmpty
-                                ? const Text(
-                                    'None',
-                                    style: TextStyle(
+                                ? Text(
+                                    l10n.noBluetooth,
+                                    style: const TextStyle(
                                       fontSize: 16,
                                       color: Colors.black87,
                                     ),
@@ -229,23 +230,23 @@ class _InfoScreenState extends State<InfoScreen> {
                                 : Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: _bluetoothDevices.map((device) {
-                                      final name = device['name'] ?? 'Unknown';
+                                      final name = device['name'] ?? l10n.unknown;
                                       final type = device['type'] ?? '';
-                                      final connected = device['connected'] ?? 'Unknown';
-                                      final isConnected = connected == 'Connected';
+                                      final connected = device['connected'] ?? l10n.unknown;
+                                      final isConnected = connected == l10n.connected;
                                       
                                       // Determine icon based on type or device name
                                       IconData deviceIcon;
                                       final nameLower = name.toLowerCase();
                                       if (nameLower.contains('scan') || nameLower.contains('barcode') || nameLower.contains('powerscan')) {
                                         deviceIcon = Icons.document_scanner;
-                                      } else if (type == 'Keyboard') {
+                                      } else if (type == l10n.deviceTypeKeyboard) {
                                         deviceIcon = Icons.keyboard;
-                                      } else if (type == 'Scanner') {
+                                      } else if (type == l10n.deviceTypeScanner) {
                                         deviceIcon = Icons.document_scanner;
-                                      } else if (type == 'Mouse') {
+                                      } else if (type == l10n.deviceTypeMouse) {
                                         deviceIcon = Icons.mouse;
-                                      } else if (type == 'Audio') {
+                                      } else if (type == l10n.deviceTypeAudio) {
                                         deviceIcon = Icons.headphones;
                                       } else {
                                         deviceIcon = Icons.bluetooth;

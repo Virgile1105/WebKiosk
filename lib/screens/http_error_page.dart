@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../generated/l10n/app_localizations.dart';
 
 class HttpErrorPage extends StatelessWidget {
   final int statusCode;
@@ -18,49 +19,51 @@ class HttpErrorPage extends StatelessWidget {
     this.onExit,
   });
 
-  String _getErrorTitle() {
+  String _getErrorTitle(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     switch (statusCode) {
       case 400:
-        return 'Requête incorrecte';
+        return l10n.httpError400Title;
       case 401:
-        return 'Non autorisé';
+        return l10n.httpError401Title;
       case 403:
-        return 'Accès refusé';
+        return l10n.httpError403Title;
       case 404:
-        return 'Page introuvable';
+        return l10n.httpError404Title;
       case 500:
-        return 'Erreur serveur interne';
+        return l10n.httpError500Title;
       case 502:
-        return 'Passerelle incorrecte';
+        return l10n.httpError502Title;
       case 503:
-        return 'Service indisponible';
+        return l10n.httpError503Title;
       case 504:
-        return 'Délai d\'attente dépassé';
+        return l10n.httpError504Title;
       default:
-        return 'Erreur HTTP $statusCode';
+        return l10n.httpErrorDefaultTitle(statusCode);
     }
   }
 
-  String _getErrorDescription() {
+  String _getErrorDescription(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     switch (statusCode) {
       case 400:
-        return 'Le serveur ne peut pas traiter la requête en raison d\'une erreur client.';
+        return l10n.httpError400Desc;
       case 401:
-        return 'Une authentification est requise pour accéder à cette ressource.';
+        return l10n.httpError401Desc;
       case 403:
-        return 'Vous n\'avez pas la permission d\'accéder à cette ressource.';
+        return l10n.httpError403Desc;
       case 404:
-        return 'La page demandée n\'existe pas sur le serveur.';
+        return l10n.httpError404Desc;
       case 500:
-        return 'Le serveur a rencontré une erreur interne et n\'a pas pu traiter la requête.';
+        return l10n.httpError500Desc;
       case 502:
-        return 'Le serveur a reçu une réponse invalide du serveur en amont.';
+        return l10n.httpError502Desc;
       case 503:
-        return 'Le serveur est temporairement indisponible, probablement en maintenance.';
+        return l10n.httpError503Desc;
       case 504:
-        return 'Le serveur n\'a pas reçu de réponse à temps du serveur en amont.';
+        return l10n.httpError504Desc;
       default:
-        return 'Le serveur a renvoyé un code d\'erreur HTTP $statusCode.';
+        return l10n.httpErrorDefaultDesc(statusCode);
     }
   }
 
@@ -100,6 +103,7 @@ class HttpErrorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -145,7 +149,7 @@ class HttpErrorPage extends StatelessWidget {
                 
                 // Error title
                 Text(
-                  _getErrorTitle(),
+                  _getErrorTitle(context),
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -157,7 +161,7 @@ class HttpErrorPage extends StatelessWidget {
                 
                 // Error description
                 Text(
-                  _getErrorDescription(),
+                  _getErrorDescription(context),
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.grey.shade600,
@@ -183,7 +187,7 @@ class HttpErrorPage extends StatelessWidget {
                           Icon(Icons.link, size: 16, color: Colors.grey.shade600),
                           const SizedBox(width: 8),
                           Text(
-                            'URL :',
+                            l10n.urlLabel,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -223,7 +227,7 @@ class HttpErrorPage extends StatelessWidget {
                             Icon(Icons.info_outline, size: 16, color: Colors.red.shade700),
                             const SizedBox(width: 8),
                             Text(
-                              'Message du serveur :',
+                              l10n.serverMessage,
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -267,7 +271,7 @@ class HttpErrorPage extends StatelessWidget {
                               child: ElevatedButton.icon(
                                 onPressed: onRetry,
                                 icon: const Icon(Icons.refresh),
-                                label: const Text('Réessayer'),
+                                label: Text(l10n.retryButton),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   backgroundColor: Colors.lightGreen,
@@ -283,7 +287,7 @@ class HttpErrorPage extends StatelessWidget {
                               child: OutlinedButton.icon(
                                 onPressed: onReload,
                                 icon: const Icon(Icons.restart_alt),
-                                label: const Text('Recharger'),
+                                label: Text(l10n.reloadButton),
                                 style: OutlinedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   side: BorderSide(color: Colors.blue.shade400, width: 2),
@@ -298,7 +302,7 @@ class HttpErrorPage extends StatelessWidget {
                               child: ElevatedButton.icon(
                                 onPressed: onExit,
                                 icon: const Icon(Icons.home),
-                                label: const Text('Quitter'),
+                                label: Text(l10n.quit),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   backgroundColor: Colors.orange,
@@ -317,7 +321,7 @@ class HttpErrorPage extends StatelessWidget {
                             ElevatedButton.icon(
                               onPressed: onRetry,
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Réessayer'),
+                              label: Text(l10n.retryButton),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                 backgroundColor: Colors.lightGreen,
@@ -330,7 +334,7 @@ class HttpErrorPage extends StatelessWidget {
                             OutlinedButton.icon(
                               onPressed: onReload,
                               icon: const Icon(Icons.restart_alt),
-                              label: const Text('Recharger'),
+                              label: Text(l10n.reloadButton),
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                 side: BorderSide(color: Colors.blue.shade400, width: 2),
@@ -342,7 +346,7 @@ class HttpErrorPage extends StatelessWidget {
                             ElevatedButton.icon(
                               onPressed: onExit,
                               icon: const Icon(Icons.home),
-                              label: const Text('Quitter'),
+                              label: Text(l10n.quit),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                 backgroundColor: Colors.orange,

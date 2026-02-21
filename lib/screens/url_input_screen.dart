@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'kiosk_webview_screen.dart';
 
 class UrlInputScreen extends StatefulWidget {
@@ -19,11 +20,12 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
   }
 
   void _navigateToWebView() {
+    final l10n = AppLocalizations.of(context)!;
     String url = _urlController.text.trim();
     
     if (url.isEmpty) {
       setState(() {
-        _errorMessage = 'Please enter a URL';
+        _errorMessage = l10n.pleaseEnterUrl;
       });
       return;
     }
@@ -42,7 +44,7 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = 'Please enter a valid URL';
+        _errorMessage = l10n.pleaseEnterValidUrl;
       });
       return;
     }
@@ -61,6 +63,7 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -101,7 +104,7 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Enter a website URL to begin',
+                      l10n.enterWebsiteUrlToBegin,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Colors.grey.shade600,
                       ),
@@ -110,8 +113,8 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
                     TextField(
                       controller: _urlController,
                       decoration: InputDecoration(
-                        labelText: 'Website URL',
-                        hintText: 'example.com or https://example.com',
+                        labelText: l10n.websiteUrl,
+                        hintText: l10n.urlExampleHint,
                         prefixIcon: const Icon(Icons.link),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -140,8 +143,8 @@ class _UrlInputScreenState extends State<UrlInputScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text(
-                          'Open Website',
+                        child: Text(
+                          l10n.openWebsite,
                           style: TextStyle(fontSize: 16),
                         ),
                       ),

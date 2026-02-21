@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/shortcut_list_screen.dart';
 import 'screens/kiosk_webview_screen.dart';
 import 'screens/error_page.dart';
 import 'models/shortcut_item.dart';
 import 'utils/logger.dart';
+import 'generated/l10n/app_localizations.dart';
 
 const MethodChannel platform = MethodChannel('devicegate.app/shortcut');
 
@@ -91,9 +93,19 @@ void main() async {
       // Show error page if initialization fails
       runApp(
         MaterialApp(
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('en', ''),
+            Locale('fr', ''),
+          ],
           home: ErrorPage(
-            errorTitle: 'Erreur de démarrage',
-            errorMessage: 'L\'application n\'a pas pu démarrer correctement',
+            errorTitle: null, // Will use localized default
+            errorMessage: null, // Will use localized default
             error: error,
             stackTrace: stackTrace,
             onReload: () {
@@ -116,8 +128,8 @@ void main() async {
         navigatorKey.currentState?.pushReplacement(
           MaterialPageRoute(
             builder: (context) => ErrorPage(
-              errorTitle: 'Erreur non gérée',
-              errorMessage: 'Une erreur inattendue s\'est produite',
+              errorTitle: null, // Will use localized default
+              errorMessage: null, // Will use localized default
               error: error,
               stackTrace: stackTrace,
               onReload: () {
@@ -379,6 +391,30 @@ class _KioskBrowserAppState extends State<KioskBrowserApp> with WidgetsBindingOb
       navigatorKey: navigatorKey,
       title: 'DeviceGate',
       debugShowCheckedModeBanner: false,
+      
+      // Localization settings
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''), // English
+        Locale('fr', ''), // French
+      ],
+      // Automatically use device locale if supported, otherwise default to English
+      localeResolutionCallback: (deviceLocale, supportedLocales) {
+        if (deviceLocale != null) {
+          for (var locale in supportedLocales) {
+            if (locale.languageCode == deviceLocale.languageCode) {
+              return deviceLocale;
+            }
+          }
+        }
+        return const Locale('en', ''); // Default to English
+      },
+      
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

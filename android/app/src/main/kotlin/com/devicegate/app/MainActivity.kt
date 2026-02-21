@@ -84,22 +84,24 @@ class MainActivity : FlutterActivity() {
             // Auto-grant Bluetooth permissions for device info (Android 12+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 try {
-                    val currentState = devicePolicyManager?.getPermissionGrantState(
-                        adminComponent!!,
-                        packageName,
-                        Manifest.permission.BLUETOOTH_CONNECT
-                    )
-                    
-                    if (currentState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
-                        val granted = devicePolicyManager?.setPermissionGrantState(
-                            adminComponent!!,
+                    val admin = adminComponent
+                    if (admin != null) {
+                        val bluetoothConnectState = devicePolicyManager?.getPermissionGrantState(
+                            admin,
                             packageName,
-                            Manifest.permission.BLUETOOTH_CONNECT,
-                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                            Manifest.permission.BLUETOOTH_CONNECT
                         )
-                        Log.i(TAG, "BLUETOOTH_CONNECT permission auto-granted on startup: $granted")
-                    } else {
-                        Log.d(TAG, "BLUETOOTH_CONNECT permission already granted")
+                        if (bluetoothConnectState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                            devicePolicyManager?.setPermissionGrantState(
+                                admin,
+                                packageName,
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                                android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                            )
+                            Log.i(TAG, "BLUETOOTH_CONNECT permission auto-granted on startup")
+                        } else {
+                            Log.d(TAG, "BLUETOOTH_CONNECT permission already granted")
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error auto-granting BLUETOOTH_CONNECT permission", e)
@@ -2513,49 +2515,70 @@ class MainActivity : FlutterActivity() {
                     Log.d(TAG, "  Bond state: $bondState")
                     
                     // Try to determine device type
-                    val deviceClass = device.bluetoothClass
+                    val deviceName = (name ?: "").lowercase()
+                    
+                    // First check device name for scanner/barcode reader keywords
                     val deviceType = when {
-                        deviceClass == null -> {
-                            Log.d(TAG, "  Device class is null")
-                            "Unknown"
-                        }
-                        deviceClass.majorDeviceClass == 0x0500 -> {
-                            // Peripheral devices - check minor class for specific type
-                            val deviceMinorClass = deviceClass.deviceClass and 0xFF
-                            when {
-                                deviceMinorClass and 0x40 != 0 -> {
-                                    Log.d(TAG, "  Device class: 0x0500 minor 0x40 (Keyboard)")
-                                    "Keyboard"
-                                }
-                                deviceMinorClass and 0x80 != 0 -> {
-                                    Log.d(TAG, "  Device class: 0x0500 minor 0x80 (Pointing Device)")
-                                    "Mouse"
-                                }
-                                deviceMinorClass and 0x10 != 0 -> {
-                                    Log.d(TAG, "  Device class: 0x0500 minor 0x10 (Scanner/Remote)")
-                                    "Scanner"
-                                }
-                                else -> {
-                                    Log.d(TAG, "  Device class: 0x0500 minor 0x${deviceMinorClass.toString(16)} (Peripheral)")
-                                    "Peripheral"
-                                }
-                            }
-                        }
-                        deviceClass.majorDeviceClass == 0x0400 -> {
-                            Log.d(TAG, "  Device class: 0x0400 (Audio)")
-                            "Audio"
-                        }
-                        deviceClass.majorDeviceClass == 0x0200 -> {
-                            Log.d(TAG, "  Device class: 0x0200 (Phone)")
-                            "Phone"
-                        }
-                        deviceClass.majorDeviceClass == 0x0100 -> {
-                            Log.d(TAG, "  Device class: 0x0100 (Computer)")
-                            "Computer"
+                        // Check for scanner/barcode reader keywords in name
+                        deviceName.contains("scan") || 
+                        deviceName.contains("barcode") || 
+                        deviceName.contains("granit") || 
+                        deviceName.contains("honeywell") || 
+                        deviceName.contains("zebra") || 
+                        deviceName.contains("datalogic") || 
+                        deviceName.contains("symbol") || 
+                        deviceName.contains("voyager") || 
+                        deviceName.contains("reader") -> {
+                            Log.d(TAG, "  Device detected as Scanner by name: $name")
+                            "Scanner"
                         }
                         else -> {
-                            Log.d(TAG, "  Device class: 0x${deviceClass.majorDeviceClass.toString(16)} (Other)")
-                            "Other"
+                            // Fall back to Bluetooth class detection
+                            val deviceClass = device.bluetoothClass
+                            when {
+                                deviceClass == null -> {
+                                    Log.d(TAG, "  Device class is null")
+                                    "Unknown"
+                                }
+                                deviceClass.majorDeviceClass == 0x0500 -> {
+                                    // Peripheral devices - check minor class for specific type
+                                    val deviceMinorClass = deviceClass.deviceClass and 0xFF
+                                    when {
+                                        deviceMinorClass and 0x40 != 0 -> {
+                                            Log.d(TAG, "  Device class: 0x0500 minor 0x40 (Keyboard)")
+                                            "Keyboard"
+                                        }
+                                        deviceMinorClass and 0x80 != 0 -> {
+                                            Log.d(TAG, "  Device class: 0x0500 minor 0x80 (Pointing Device)")
+                                            "Mouse"
+                                        }
+                                        deviceMinorClass and 0x10 != 0 -> {
+                                            Log.d(TAG, "  Device class: 0x0500 minor 0x10 (Scanner/Remote)")
+                                            "Scanner"
+                                        }
+                                        else -> {
+                                            Log.d(TAG, "  Device class: 0x0500 minor 0x${deviceMinorClass.toString(16)} (Peripheral)")
+                                            "Peripheral"
+                                        }
+                                    }
+                                }
+                                deviceClass.majorDeviceClass == 0x0400 -> {
+                                    Log.d(TAG, "  Device class: 0x0400 (Audio)")
+                                    "Audio"
+                                }
+                                deviceClass.majorDeviceClass == 0x0200 -> {
+                                    Log.d(TAG, "  Device class: 0x0200 (Phone)")
+                                    "Phone"
+                                }
+                                deviceClass.majorDeviceClass == 0x0100 -> {
+                                    Log.d(TAG, "  Device class: 0x0100 (Computer)")
+                                    "Computer"
+                                }
+                                else -> {
+                                    Log.d(TAG, "  Device class: 0x${deviceClass.majorDeviceClass.toString(16)} (Other)")
+                                    "Other"
+                                }
+                            }
                         }
                     }
                     deviceInfo["type"] = deviceType

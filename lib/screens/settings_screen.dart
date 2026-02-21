@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../models/shortcut_item.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'add_shortcut_screen.dart';
 import 'add_apps_screen.dart';
 import 'network_status_screen.dart';
@@ -55,11 +56,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       log('Error saving device name: $error');
       log('Stack trace: $stackTrace');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de sauvegarde',
-              errorMessage: 'Impossible de sauvegarder le nom de l\'appareil',
+              errorTitle: l10n.errorSavingShortcut,
+              errorMessage: l10n.errorSavingName(error.toString()),
               error: error,
               stackTrace: stackTrace,
               onRetry: () {
@@ -74,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDeviceNameDialog() {
+    final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController(text: _deviceName);
     showDialog(
       context: context,
@@ -90,9 +93,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Device Name',
-                      style: TextStyle(
+                    Text(
+                      l10n.deviceName,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w500,
                       ),
@@ -100,10 +103,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: controller,
-                      decoration: const InputDecoration(
-                        labelText: 'Device Name',
-                        hintText: 'Enter device name',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.deviceName,
+                        hintText: l10n.deviceName,
+                        border: const OutlineInputBorder(),
                       ),
                       maxLength: 30,
                     ),
@@ -119,12 +122,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: () {
                       controller.clear();
                     },
-                    child: const Text('Clear'),
+                    child: Text(l10n.clear),
                   ),
                   const SizedBox(height: 4),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.cancel),
                   ),
                   const SizedBox(height: 4),
                   TextButton(
@@ -134,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Navigator.pop(context);
                       }
                     },
-                    child: const Text('Save'),
+                    child: Text(l10n.save),
                   ),
                 ],
               ),
@@ -170,6 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -192,9 +196,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             color: Colors.grey[100],
-            child: const Text(
-              'Settings',
-              style: TextStyle(
+            child: Text(
+              l10n.settings,
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
@@ -207,7 +211,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.devices, color: Colors.blue),
-                  title: const Text('Device Name'),
+                  title: Text(l10n.deviceName),
                   subtitle: Text(_deviceName),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _showDeviceNameDialog,
@@ -215,8 +219,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.info, color: Colors.blue),
-                  title: const Text('Info'),
-                  subtitle: const Text('App and device information'),
+                  title: Text(l10n.info),
+                  subtitle: Text(l10n.infoDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.push(
@@ -233,8 +237,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.tune, color: Colors.blue),
-                  title: const Text('Configuration'),
-                  subtitle: const Text('Custom display and behavior settings'),
+                  title: Text(l10n.configuration),
+                  subtitle: Text(l10n.configurationDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.push(
@@ -248,8 +252,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.add, color: Colors.blue),
-                  title: const Text('Add Shortcut'),
-                  subtitle: const Text('Add a new web shortcut'),
+                  title: Text(l10n.addShortcut),
+                  subtitle: Text(l10n.addShortcutDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     final shortcut = await Navigator.push<ShortcutItem>(
@@ -264,8 +268,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.android, color: Colors.green),
-                  title: const Text('Add Apps'),
-                  subtitle: const Text('Add installed Android apps'),
+                  title: Text(l10n.addApps),
+                  subtitle: Text(l10n.addAppsDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () async {
                     final changes = await Navigator.push<Map<String, Map<String, dynamic>>>(
@@ -282,8 +286,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.wifi, color: Colors.blue),
-                  title: const Text('Network'),
-                  subtitle: const Text('View network status and settings'),
+                  title: Text(l10n.network),
+                  subtitle: Text(l10n.networkDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.push(
@@ -297,8 +301,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.settings_applications, color: Colors.deepPurple),
-                  title: const Text('Advanced Settings'),
-                  subtitle: const Text('Developer options and USB settings'),
+                  title: Text(l10n.advancedSettings),
+                  subtitle: Text(l10n.advancedSettingsDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.push(
@@ -312,8 +316,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.exit_to_app, color: Colors.orange),
-                  title: const Text('Exit to Home'),
-                  subtitle: const Text('Return to native Android home'),
+                  title: Text(l10n.exitToHome),
+                  subtitle: Text(l10n.exitToHomeDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     _exitToHome();

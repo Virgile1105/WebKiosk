@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../generated/l10n/app_localizations.dart';
 import '../models/shortcut_item.dart';
 import 'error_page.dart';
 
@@ -45,19 +46,22 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
       if (mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ErrorPage(
-              errorTitle: 'Erreur de chargement',
-              errorMessage: 'Impossible de charger les applications installées',
-              error: error,
-              stackTrace: stackTrace,
-              onRetry: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _isLoading = true;
-                });
-                _loadInstalledApps();
-              },
-            ),
+            builder: (context) {
+              final l10n = AppLocalizations.of(context)!;
+              return ErrorPage(
+                errorTitle: l10n.errorLoadingApps,
+                errorMessage: l10n.couldNotLoadApps,
+                error: error,
+                stackTrace: stackTrace,
+                onRetry: () {
+                  Navigator.of(context).pop();
+                  setState(() {
+                    _isLoading = true;
+                  });
+                  _loadInstalledApps();
+                },
+              );
+            },
           ),
         );
       }
@@ -102,17 +106,18 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Apps'),
+        title: Text(l10n.addApps),
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         actions: [
           TextButton(
             onPressed: _saveChanges,
-            child: const Text(
-              'SAVE',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            child: Text(
+              l10n.save.toUpperCase(),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -120,10 +125,10 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _installedApps.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
-                    'No apps found',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    l10n.noAppsFound,
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                 )
               : Column(
@@ -134,7 +139,7 @@ class _AddAppsScreenState extends State<AddAppsScreen> {
                       padding: const EdgeInsets.all(16.0),
                       color: Colors.grey.shade100,
                       child: Text(
-                        'Check apps to add to DeviceGate home',
+                        l10n.checkAppsToAdd,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade700,

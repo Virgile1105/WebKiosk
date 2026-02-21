@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart' as logger;
+import '../generated/l10n/app_localizations.dart';
 
 class AdvancedSettingsInfoScreen extends StatefulWidget {
   const AdvancedSettingsInfoScreen({super.key});
@@ -72,9 +73,10 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Advanced Settings Information'),
+        title: Text(l10n.advancedSettingsInfo),
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
       ),
@@ -84,11 +86,11 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
               children: [
 
                 
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: Text(
-                    'System Status',
-                    style: TextStyle(
+                    l10n.systemStatus,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.grey,
@@ -102,7 +104,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.developer_mode,
                     color: _developerModeEnabled ? Colors.orange : Colors.grey,
                   ),
-                  title: const Text('Developer Mode'),
+                  title: Text(l10n.developerMode),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -110,7 +112,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _developerModeEnabled ? 'ON' : 'OFF',
+                      _developerModeEnabled ? l10n.on : l10n.off,
                       style: TextStyle(
                         color: _developerModeEnabled ? Colors.green[900] : Colors.grey[800],
                         fontWeight: FontWeight.bold,
@@ -127,7 +129,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.usb,
                     color: _usbDebuggingEnabled ? Colors.green : Colors.grey,
                   ),
-                  title: const Text('USB Debugging'),
+                  title: Text(l10n.usbDebugging),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -135,7 +137,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _usbDebuggingEnabled ? 'ON' : 'OFF',
+                      _usbDebuggingEnabled ? l10n.on : l10n.off,
                       style: TextStyle(
                         color: _usbDebuggingEnabled ? Colors.green[900] : Colors.grey[800],
                         fontWeight: FontWeight.bold,
@@ -152,7 +154,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.folder_open,
                     color: _usbFileTransferEnabled ? Colors.green : Colors.grey,
                   ),
-                  title: const Text('USB File Transfer'),
+                  title: Text(l10n.usbFileTransfer),
                 
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -161,7 +163,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _usbFileTransferEnabled ? 'ON' : 'OFF',
+                      _usbFileTransferEnabled ? l10n.on : l10n.off,
                       style: TextStyle(
                         color: _usbFileTransferEnabled ? Colors.green[900] : Colors.grey[800],
                         fontWeight: FontWeight.bold,
@@ -172,11 +174,11 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                 
                 const Divider(height: 1),
                 
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 24, 16, 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                   child: Text(
-                    'Location Permissions',
-                    style: TextStyle(
+                    l10n.locationPermissions,
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.grey,
@@ -190,11 +192,11 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.location_on,
                     color: _locationPermissionGranted ? Colors.green : Colors.red,
                   ),
-                  title: const Text('Location Access'),
+                  title: Text(l10n.locationAccess),
                   subtitle: Text(
                     _locationPermissionGranted 
-                      ? 'Location permission granted' 
-                      : 'Location permission denied',
+                      ? l10n.locationPermissionGranted
+                      : l10n.locationPermissionDenied,
                   ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -203,7 +205,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _locationPermissionGranted ? 'GRANTED' : 'DENIED',
+                      _locationPermissionGranted ? l10n.granted : l10n.denied,
                       style: TextStyle(
                         color: _locationPermissionGranted ? Colors.green[900] : Colors.red[900],
                         fontWeight: FontWeight.bold,
@@ -220,11 +222,11 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.explore,
                     color: _backgroundLocationGranted ? Colors.green : Colors.orange,
                   ),
-                  title: const Text('Allow all the time'),
+                  title: Text(l10n.allowAllTheTime),
                   subtitle: Text(
                     _backgroundLocationGranted 
-                      ? 'Background location access granted' 
-                      : 'Only while using the app',
+                      ? l10n.backgroundLocationGranted
+                      : l10n.onlyWhileUsingApp,
                   ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -233,7 +235,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _backgroundLocationGranted ? 'ALWAYS' : 'LIMITED',
+                      _backgroundLocationGranted ? l10n.always : l10n.limited,
                       style: TextStyle(
                         color: _backgroundLocationGranted ? Colors.green[900] : Colors.orange[900],
                         fontWeight: FontWeight.bold,
@@ -250,11 +252,11 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     Icons.gps_fixed,
                     color: _preciseLocationEnabled ? Colors.green : Colors.grey,
                   ),
-                  title: const Text('Use precise location'),
+                  title: Text(l10n.usePreciseLocation),
                   subtitle: Text(
                     _preciseLocationEnabled 
-                      ? 'Precise GPS location enabled' 
-                      : 'Approximate location only',
+                      ? l10n.preciseGpsEnabled
+                      : l10n.approximateLocationOnly,
                   ),
                   trailing: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -263,7 +265,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _preciseLocationEnabled ? 'PRECISE' : 'APPROX',
+                      _preciseLocationEnabled ? l10n.precise : l10n.approx,
                       style: TextStyle(
                         color: _preciseLocationEnabled ? Colors.green[900] : Colors.grey[800],
                         fontWeight: FontWeight.bold,
@@ -281,7 +283,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
                     child: ElevatedButton.icon(
                       onPressed: _requestLocationPermission,
                       icon: const Icon(Icons.location_on),
-                      label: const Text('Grant Location Permissions'),
+                      label: Text(l10n.grantLocationPermissions),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
@@ -297,6 +299,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
   }
   
   Future<void> _requestLocationPermission() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       await platform.invokeMethod('requestLocationPermission');
       
@@ -311,8 +314,8 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
           SnackBar(
             content: Text(
               _locationPermissionGranted && _backgroundLocationGranted
-                ? 'Location permissions granted successfully'
-                : 'Please grant location permissions manually in Settings',
+                ? l10n.locationPermissionsGranted
+                : l10n.grantLocationPermissionsManually,
             ),
             backgroundColor: _locationPermissionGranted && _backgroundLocationGranted
               ? Colors.green
@@ -325,7 +328,7 @@ class _AdvancedSettingsInfoScreenState extends State<AdvancedSettingsInfoScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('${l10n.errorLabel} $e'),
             backgroundColor: Colors.red,
           ),
         );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../generated/l10n/app_localizations.dart';
 
 class WebViewSettingsScreen extends StatefulWidget {
   final bool useCustomKeyboard;
@@ -33,10 +34,11 @@ class _WebViewSettingsScreenState extends State<WebViewSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Paramètres de la vue web',
+        title: Text(
+          l10n.webviewSettings,
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -55,15 +57,15 @@ class _WebViewSettingsScreenState extends State<WebViewSettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
               child: SwitchListTile(
-                title: const Text(
-                  'Clavier personnalisé',
+                title: Text(
+                  l10n.customKeyboard,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                subtitle: const Text(
-                  'Afficher le clavier numérique personnalisé dans le coin inférieur gauche',
+                subtitle: Text(
+                  l10n.customKeyboardDesc,
                   style: TextStyle(fontSize: 14),
                 ),
                 value: _useCustomKeyboard,
@@ -84,15 +86,15 @@ class _WebViewSettingsScreenState extends State<WebViewSettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
               child: SwitchListTile(
-                title: const Text(
-                  'Désactiver Copier/Coller',
+                title: Text(
+                  l10n.disableCopyPaste,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                subtitle: const Text(
-                  'Empêcher le copier-coller dans les champs de saisie',
+                subtitle: Text(
+                  l10n.disableCopyPasteDesc,
                   style: TextStyle(fontSize: 14),
                 ),
                 value: _disableCopyPaste,
@@ -113,15 +115,15 @@ class _WebViewSettingsScreenState extends State<WebViewSettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
               child: SwitchListTile(
-                title: const Text(
-                  'Sons d\'alerte SAP',
+                title: Text(
+                  l10n.sapWarningSounds,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                subtitle: const Text(
-                  'Activer les sons pour les messages d\'avertissement et d\'erreur SAP',
+                subtitle: Text(
+                  l10n.sapWarningSoundsDesc,
                   style: TextStyle(fontSize: 14),
                 ),
                 value: _enableWarningSound,

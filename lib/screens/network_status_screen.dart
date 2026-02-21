@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../utils/logger.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'error_page.dart';
 
 class NetworkStatusScreen extends StatefulWidget {
@@ -73,6 +74,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
     } catch (error, stackTrace) {
       log('Error fetching WiFi info: $error');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         setState(() {
           _wifiInfo = {}; // Set empty map on error so we don't show spinner forever
         });
@@ -81,8 +83,8 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (context) => ErrorPage(
-                errorTitle: 'Erreur réseau',
-                errorMessage: 'Impossible de récupérer les informations WiFi',
+                errorTitle: l10n.networkError,
+                errorMessage: l10n.cannotRetrieveWifiInfo,
                 error: error,
                 stackTrace: stackTrace,
                 onRetry: () {
@@ -147,6 +149,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Future<void> _startSpeedTest() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_isTestingSpeed) return;
     
     setState(() {
@@ -175,7 +178,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors du test de vitesse: $error'),
+            content: Text(l10n.speedTestError(error.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -205,9 +208,10 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
     } catch (error) {
       log('Error resetting internet: $error');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Échec de la réinitialisation d\'Internet : $error'),
+            content: Text(l10n.internetResetError(error.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -223,6 +227,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Widget _buildNetworkStatus(dynamic network) {
+    final l10n = AppLocalizations.of(context)!;
     if (network == null || network is! Map) {
       return const SizedBox.shrink();
     }
@@ -255,7 +260,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isDisconnected ? 'Déconnecté' : ssid,
+                  isDisconnected ? l10n.disconnected : ssid,
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
@@ -264,7 +269,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isDisconnected ? 'Aucune connexion WiFi' : 'Connecté',
+                  isDisconnected ? l10n.noWifiConnection : l10n.connected,
                   style: TextStyle(
                     fontSize: 13,
                     color: isDisconnected ? Colors.red.shade600 : Colors.green.shade600,
@@ -280,9 +285,9 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                 color: Colors.green,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text(
-                'Actif',
-                style: TextStyle(
+              child: Text(
+                l10n.active,
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
@@ -295,6 +300,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Widget _buildSavedNetworkItem(dynamic network) {
+    final l10n = AppLocalizations.of(context)!;
     if (network == null || network is! Map) {
       return const SizedBox.shrink();
     }
@@ -322,7 +328,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              networkMap['ssid'] ?? 'Unknown',
+              networkMap['ssid'] ?? l10n.unknown,
               style: TextStyle(
                 fontSize: 14,
                 color: isConnected ? Colors.blue.shade800 : Colors.grey.shade700,
@@ -338,7 +344,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Connecté',
+                l10n.connected,
                 style: TextStyle(
                   fontSize: 11,
                   color: Colors.blue.shade800,
@@ -389,6 +395,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Widget _buildSpeedGauge(double speed) {
+    final l10n = AppLocalizations.of(context)!;
     // Speed ranges:
     // 0-10: Very slow (red)
     // 10-25: Slow (orange)
@@ -402,23 +409,23 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
     
     if (speed >= 100) {
       speedColor = Colors.green;
-      quality = 'Excellent';
+      quality = l10n.excellent;
     } else if (speed >= 50) {
       speedColor = Colors.lightGreen;
-      quality = 'Bon';
+      quality = l10n.good;
     } else if (speed >= 25) {
       speedColor = Colors.orange;
-      quality = 'Moyen';
+      quality = l10n.medium;
     } else if (speed >= 10) {
       speedColor = Colors.deepOrange;
-      quality = 'Lent';
+      quality = l10n.slow;
     } else if (speed > 0) {
       speedColor = Colors.red;
-      quality = 'Très lent';
+      quality = l10n.verySlow;
     } else {
       // During initial testing or no data
       speedColor = Colors.grey.shade600;
-      quality = _isTestingSpeed ? 'Test...' : '';
+      quality = _isTestingSpeed ? l10n.testing : '';
     }
     
     return Column(
@@ -458,7 +465,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                       ),
                     ),
                     Text(
-                      'Mbps',
+                      l10n.mbps,
                       style: TextStyle(
                         fontSize: 9,
                         color: Colors.grey.shade700.withOpacity(_isTestingSpeed ? 0.6 : 1.0),
@@ -484,6 +491,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Widget _buildSignalRow(int rssi) {
+    final l10n = AppLocalizations.of(context)!;
     // Signal quality based on dBm:
     // -30 to -50: Excellent (green)
     // -50 to -60: Very good (light green)
@@ -497,22 +505,22 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
     
     if (rssi >= -50) {
       signalColor = Colors.green;
-      quality = 'Excellent';
+      quality = l10n.excellent;
     } else if (rssi >= -60) {
       signalColor = Colors.lightGreen;
-      quality = 'Très bon';
+      quality = l10n.veryGood;
     } else if (rssi >= -67) {
       signalColor = Colors.lime;
-      quality = 'Bon';
+      quality = l10n.good;
     } else if (rssi >= -70) {
       signalColor = Colors.orange;
-      quality = 'Moyen';
+      quality = l10n.fair;
     } else if (rssi >= -80) {
       signalColor = Colors.deepOrange;
-      quality = 'Faible';
+      quality = l10n.poor;
     } else {
       signalColor = Colors.red;
-      quality = 'Très faible';
+      quality = l10n.veryPoor;
     }
     
     // Calculate percentage for bar (from -90 to -30)
@@ -526,7 +534,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
           SizedBox(
             width: 180,
             child: Text(
-              'Signal',
+              l10n.signal,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -601,9 +609,10 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Network'),
+        title: Text(l10n.network),
         backgroundColor: const Color.fromRGBO(51, 61, 71, 1),
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -615,6 +624,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
   }
 
   Widget _buildBody() {
+    final l10n = AppLocalizations.of(context)!;
     try {
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -630,7 +640,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                   // WiFi Connection Status
                   if (_wifiInfo!['currentNetwork'] != null) ...[
                     Text(
-                      'Connexion WiFi',
+                      l10n.wifiConnection,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -645,7 +655,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                   // Saved Networks
                   if (_wifiInfo!['savedNetworks'] != null && (_wifiInfo!['savedNetworks'] as List).isNotEmpty) ...[
                     Text(
-                      'Réseaux enregistrés',
+                      l10n.savedNetworks,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -661,7 +671,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
 
                   // Internet Status
                   Text(
-                    'État Internet',
+                    l10n.internetStatus,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -671,6 +681,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                   const SizedBox(height: 12),
                   Builder(
                     builder: (context) {
+                      final l10n = AppLocalizations.of(context)!;
                       final websiteCanConnect = _websiteStatus?['canConnect'] == true;
                       final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
                       final websiteError = _websiteStatus?['error'] as String?;
@@ -689,8 +700,8 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                         iconColor = Colors.green;
                         textColor = Colors.green.shade800;
                         icon = Icons.cloud_done;
-                        title = 'Internet OK';
-                        subtitle = 'Connecté';
+                        title = l10n.internetOk;
+                        subtitle = l10n.connected;
                       } else if (websiteError == 'connection_refused' || 
                                  websiteError == 'socket_timeout' || 
                                  websiteError == 'unknown_host' ||
@@ -700,16 +711,16 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                         iconColor = Colors.orange;
                         textColor = Colors.orange.shade800;
                         icon = Icons.cloud_off;
-                        title = 'Erreur du site web';
-                        subtitle = _websiteStatus?['errorMessage'] ?? 'Le site est inaccessible';
+                        title = l10n.websiteError;
+                        subtitle = _websiteStatus?['errorMessage'] ?? l10n.siteUnavailable;
                       } else {
                         bgColor = Colors.red.shade50;
                         borderColor = Colors.red.shade200;
                         iconColor = Colors.red;
                         textColor = Colors.red.shade800;
                         icon = Icons.cloud_off;
-                        title = 'Pas d\'Internet';
-                        subtitle = 'Connexion impossible';
+                        title = l10n.noInternet;
+                        subtitle = l10n.connectionImpossible;
                       }
                       
                       return Column(
@@ -765,7 +776,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              'Internet\nSpeed',
+                                              l10n.internetSpeed,
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                 fontSize: 11,
@@ -794,7 +805,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                                                 size: 24,
                                                 color: _isTestingSpeed ? Colors.grey.shade400 : Colors.blue.shade600,
                                               ),
-                                              tooltip: _isTestingSpeed ? 'Test en cours...' : 'Relancer le test',
+                                              tooltip: _isTestingSpeed ? l10n.testInProgress : l10n.restartTest,
                                               padding: EdgeInsets.zero,
                                               constraints: BoxConstraints(),
                                             ),
@@ -828,7 +839,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                           )
                         : const Icon(Icons.wifi_off, size: 20),
                       label: Text(
-                        _isResettingInternet ? 'Réinitialisation...' : 'Réinitialiser Internet',
+                        _isResettingInternet ? l10n.resettingInternet : l10n.resetInternet,
                         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -861,12 +872,14 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                       children: [
                         Icon(Icons.router, color: Colors.grey.shade700, size: 22),
                         const SizedBox(width: 8),
-                        Text(
-                          'Identification de l\'antenne/point d\'accès',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade800,
+                        Expanded(
+                          child: Text(
+                            l10n.antennaIdentification,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade800,
+                            ),
                           ),
                         ),
                       ],
@@ -882,23 +895,23 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                       child: Column(
                         children: [
                           if (_wifiInfo!['currentNetwork']['bssid'] != null)
-                            _buildInfoRow('BSSID (MAC Antenne)', _wifiInfo!['currentNetwork']['bssid'].toString(), isHighlight: true),
+                            _buildInfoRow(l10n.bssidMacAntenna, _wifiInfo!['currentNetwork']['bssid'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['routerManufacturer'] != null)
-                            _buildInfoRow('Fabricant', _wifiInfo!['currentNetwork']['routerManufacturer'].toString(), isHighlight: true),
+                            _buildInfoRow(l10n.manufacturer, _wifiInfo!['currentNetwork']['routerManufacturer'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['gateway'] != null)
-                            _buildInfoRow('Passerelle (IP Routeur)', _wifiInfo!['currentNetwork']['gateway'].toString(), isHighlight: true),
+                            _buildInfoRow(l10n.gatewayRouterIp, _wifiInfo!['currentNetwork']['gateway'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['channel'] != null)
-                            _buildInfoRow('Canal WiFi', 'Canal ${_wifiInfo!['currentNetwork']['channel']}'),
+                            _buildInfoRow(l10n.wifiChannel, '${l10n.channel} ${_wifiInfo!['currentNetwork']['channel']}'),
                           if (_wifiInfo!['currentNetwork']['channelWidth'] != null)
-                            _buildInfoRow('Largeur canal', _wifiInfo!['currentNetwork']['channelWidth'].toString()),
+                            _buildInfoRow(l10n.channelWidth, _wifiInfo!['currentNetwork']['channelWidth'].toString()),
                           if (_wifiInfo!['currentNetwork']['frequencyBand'] != null)
-                            _buildInfoRow('Bande', _wifiInfo!['currentNetwork']['frequencyBand'].toString()),
+                            _buildInfoRow(l10n.band, _wifiInfo!['currentNetwork']['frequencyBand'].toString()),
                           if (_wifiInfo!['currentNetwork']['frequency'] != null)
-                            _buildInfoRow('Fréquence', '${_wifiInfo!['currentNetwork']['frequency']} MHz'),
+                            _buildInfoRow(l10n.frequency, '${_wifiInfo!['currentNetwork']['frequency']} ${l10n.frequencyMhz}'),
                           if (_wifiInfo!['currentNetwork']['rssi'] != null)
                             _buildSignalRow(_wifiInfo!['currentNetwork']['rssi']),
                           if (_wifiInfo!['currentNetwork']['securityType'] != null)
-                            _buildInfoRow('Sécurité', _wifiInfo!['currentNetwork']['securityType'].toString()),
+                            _buildInfoRow(l10n.security, _wifiInfo!['currentNetwork']['securityType'].toString()),
                         ],
                       ),
                     ),
@@ -909,7 +922,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                         Icon(Icons.info_outline, color: Colors.grey.shade700, size: 22),
                         const SizedBox(width: 8),
                         Text(
-                          'Informations de connexion',
+                          l10n.connectionInfo,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -929,19 +942,19 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                       child: Column(
                         children: [
                           if (_wifiInfo!['currentNetwork']['wifiStandard'] != null)
-                            _buildInfoRow('Standard WiFi', _wifiInfo!['currentNetwork']['wifiStandard'].toString()),
+                            _buildInfoRow(l10n.wifiStandard, _wifiInfo!['currentNetwork']['wifiStandard'].toString()),
                           if (_wifiInfo!['currentNetwork']['linkSpeed'] != null)
-                            _buildInfoRow('Vitesse actuelle', '${_wifiInfo!['currentNetwork']['linkSpeed']} Mbps'),
+                            _buildInfoRow(l10n.currentSpeed, '${_wifiInfo!['currentNetwork']['linkSpeed']} ${l10n.speedMbps}'),
                           if (_wifiInfo!['currentNetwork']['txLinkSpeed'] != null)
-                            _buildInfoRow('Vitesse TX (Upload)', '${_wifiInfo!['currentNetwork']['txLinkSpeed']} Mbps'),
+                            _buildInfoRow(l10n.txSpeedUpload, '${_wifiInfo!['currentNetwork']['txLinkSpeed']} ${l10n.speedMbps}'),
                           if (_wifiInfo!['currentNetwork']['rxLinkSpeed'] != null)
-                            _buildInfoRow('Vitesse RX (Download)', '${_wifiInfo!['currentNetwork']['rxLinkSpeed']} Mbps'),
+                            _buildInfoRow(l10n.rxSpeedDownload, '${_wifiInfo!['currentNetwork']['rxLinkSpeed']} ${l10n.speedMbps}'),
                           if (_wifiInfo!['currentNetwork']['maxLinkSpeed'] != null)
-                            _buildInfoRow('Vitesse max', '${_wifiInfo!['currentNetwork']['maxLinkSpeed']} Mbps'),
+                            _buildInfoRow(l10n.maxSpeed, '${_wifiInfo!['currentNetwork']['maxLinkSpeed']} ${l10n.speedMbps}'),
                           if (_wifiInfo!['currentNetwork']['ipAddress'] != null)
-                            _buildInfoRow('Adresse IP (Tablette)', _formatIpAddress(_wifiInfo!['currentNetwork']['ipAddress'])),
+                            _buildInfoRow(l10n.ipAddressTablet, _formatIpAddress(_wifiInfo!['currentNetwork']['ipAddress'])),
                           if (_wifiInfo!['currentNetwork']['dns'] != null)
-                            _buildInfoRow('DNS', _wifiInfo!['currentNetwork']['dns'].toString()),
+                            _buildInfoRow(l10n.dns, _wifiInfo!['currentNetwork']['dns'].toString()),
                         ],
                       ),
                     ),
@@ -965,7 +978,7 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
               Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
               const SizedBox(height: 16),
               Text(
-                'Erreur d\'affichage',
+                l10n.displayError,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade800),
               ),
               const SizedBox(height: 8),

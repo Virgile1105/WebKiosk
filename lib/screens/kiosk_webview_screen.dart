@@ -11,6 +11,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/logger.dart';
 import '../models/shortcut_item.dart';
+import '../generated/l10n/app_localizations.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
 import 'error_page.dart';
@@ -201,11 +202,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       
       // If custom keyboard is enabled, disable system keyboards at device level
       if (_useCustomKeyboardRuntime) {
+        log('Custom keyboard enabled - disabling system keyboards');
         _disableSystemKeyboards();
         
         // Aggressive keyboard reset: retry multiple times to ensure it sticks
         // This helps when returning from settings where native keyboard was active
         _startAggressiveKeyboardReset();
+      } else {
+        log('Custom keyboard NOT enabled - system keyboards allowed');
       }
       
       // Add observer to detect when screen comes back into view
@@ -216,11 +220,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       // Show error in UI instead of crashing
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (context) => ErrorPage(
-                errorTitle: 'Erreur d\'initialisation',
-                errorMessage: 'Impossible d\'initialiser le navigateur web',
+                errorTitle: l10n.initializationError,
+                errorMessage: l10n.cannotInitializeWebBrowser,
                 error: error,
                 stackTrace: stackTrace,
                 onExit: () => Navigator.of(context).pop(),
@@ -418,9 +423,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       log('Error saving custom app name: $error');
       log('Stack trace: $stackTrace');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors de la sauvegarde du nom: $error'),
+            content: Text(l10n.errorSavingName(error.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -449,9 +455,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       log('Error saving custom icon URL: $error');
       log('Stack trace: $stackTrace');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors de la sauvegarde de l\'icône: $error'),
+            content: Text(l10n.errorSavingIcon(error.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -670,11 +677,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             // Only load actual URL after blank page is loaded
             if (url == 'about:blank' || url.contains('data:text/html')) {
               await Future.delayed(const Duration(milliseconds: 50)); // Brief pause
-              _controller.loadRequest(
-                Uri.parse(widget.initialUrl).replace(queryParameters: {
+              log('Loading URL from initialUrl: ${widget.initialUrl}');
+              final targetUrl = Uri.parse(widget.initialUrl).replace(queryParameters: {
                   ...Uri.parse(widget.initialUrl).queryParameters,
                   '_cache_bust': DateTime.now().millisecondsSinceEpoch.toString(),
-                }),
+                });
+              log('Actual URL being loaded: $targetUrl');
+              _controller.loadRequest(
+                targetUrl,
                 headers: {
                   'Cache-Control': 'no-cache, no-store, must-revalidate',
                   'Pragma': 'no-cache',
@@ -744,7 +754,25 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           },
           onHttpError: (HttpResponseError error) {
             log('HTTP error: ${error.response?.statusCode} (URL: ${error.response?.uri})');
-            // Handle HTTP errors like 500, 404, 403, etc.
+            // Only handle HTTP errors for the main document, not sub-resources
+            // Sub-resources often return 404 for optional things like favicons
+            final errorUrl = error.response?.uri?.toString();
+            if (errorUrl == null) {
+              // Sub-resource error (URL is null), ignore it
+              log('Ignoring HTTP error for sub-resource (URL is null)');
+              return;
+            }
+            
+            // Check if this error is for our main URL (not a sub-resource like CSS/JS/images)
+            final mainUrl = Uri.parse(widget.initialUrl);
+            final errUrl = Uri.parse(errorUrl);
+            if (mainUrl.host != errUrl.host || mainUrl.path != errUrl.path) {
+              // Error is for a sub-resource on a different path, ignore it
+              log('Ignoring HTTP error for sub-resource: $errorUrl');
+              return;
+            }
+            
+            // Handle HTTP errors like 500, 404, 403, etc. for main document only
             if (mounted) {
               final statusCode = error.response?.statusCode ?? 0;
               final url = error.response?.uri?.toString() ?? 'Unknown URL';
@@ -1695,6 +1723,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                       ],
                       Builder(
                         builder: (context) {
+                          final l10n = AppLocalizations.of(context)!;
                           // Check if WiFi is connected
                           final hasWifiConnection = _wifiInfo?['currentNetwork'] != null;
                           // Check if Internet is OK
@@ -1712,7 +1741,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                               ElevatedButton.icon(
                                 onPressed: buttonsEnabled ? _reloadPage : null,
                                 icon: const Icon(Icons.refresh),
-                                label: const Text('Réessayer'),
+                                label: Text(l10n.retryButton),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   backgroundColor: Colors.lightGreen,
@@ -1724,7 +1753,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                               OutlinedButton.icon(
                                 onPressed: buttonsEnabled ? _retryLoading : null,
                                 icon: const Icon(Icons.restart_alt),
-                                label: const Text('Recharger'),
+                                label: Text(l10n.reloadButton),
                                 style: OutlinedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   side: BorderSide(
@@ -1747,7 +1776,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                       ),
                                     )
                                   : const Icon(Icons.wifi_off),
-                                label: Text(isResetting ? 'Réinitialisation...' : 'Réinitialiser Internet'),
+                                label: Text(isResetting ? l10n.resettingInternet : l10n.resetInternet),
                                 style: ElevatedButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                   backgroundColor: Colors.orange,
@@ -1920,6 +1949,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   Widget _buildDrawer() {
+    final l10n = AppLocalizations.of(context)!;
     return Drawer(
       child: Container(
         decoration: BoxDecoration(
@@ -2093,7 +2123,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   children: [
                     _buildMenuTile(
                       icon: Icons.refresh,
-                      title: 'Recharger l\'application',
+                      title: l10n.reloadApp,
                       onTap: () {
                         Navigator.pop(context); // Close drawer
                         // Navigate back to shortcuts and immediately back to webview for complete reset
@@ -2117,7 +2147,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                     ),
                     _buildMenuTile(
                       icon: Icons.exit_to_app,
-                      title: 'Quitter',
+                      title: l10n.quit,
                       onTap: () {
                         Navigator.pop(context); // Close drawer
                         Navigator.of(context).pop(); // Return to home screen
@@ -2125,7 +2155,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                     ),
                     _buildMenuTile(
                       icon: Icons.settings,
-                      title: 'Paramètres',
+                      title: l10n.settings,
                       onTap: () async {
                         Navigator.pop(context); // Close drawer
                         // Show password dialog first
@@ -2304,9 +2334,10 @@ Widget _buildSavedNetworkItem(dynamic network) {
     } catch (e) {
       log('Error resetting internet: $e');
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Échec de la réinitialisation d\'Internet : $e'),
+            content: Text(l10n.internetResetFailed(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -2400,32 +2431,33 @@ Widget _buildSavedNetworkItem(dynamic network) {
     bool useCustomKeyboard = false;
     bool disableCopyPaste = false;
     
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: const Text('Create Home Screen Shortcut'),
+          title: Text(l10n.createShortcut),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Shortcut Name',
-                    hintText: 'My Website',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.label),
+                  decoration: InputDecoration(
+                    labelText: l10n.shortcutName,
+                    hintText: l10n.shortcutNameHint,
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.label),
                   ),
                 ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: urlController,
-                  decoration: const InputDecoration(
-                    labelText: 'Website URL',
-                    hintText: 'https://example.com',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
+                  decoration: InputDecoration(
+                    labelText: l10n.websiteUrl,
+                    hintText: l10n.websiteUrlExample,
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.link),
                   ),
                   keyboardType: TextInputType.url,
                 ),
@@ -2433,13 +2465,13 @@ Widget _buildSavedNetworkItem(dynamic network) {
                 TextField(
                   controller: iconController,
                   decoration: InputDecoration(
-                    labelText: 'Icon URL (PNG/JPG only)',
-                    hintText: 'https://example.com/icon.png',
+                    labelText: l10n.iconUrlPngJpg,
+                    hintText: l10n.iconUrlHint,
                     border: const OutlineInputBorder(),
                     prefixIcon: const Icon(Icons.image),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.auto_fix_high),
-                      tooltip: 'Auto-detect from URL',
+                      tooltip: l10n.autoDetectFromUrl,
                       onPressed: () {
                         String url = urlController.text.trim();
                         if (url.isNotEmpty) {
@@ -2459,14 +2491,14 @@ Widget _buildSavedNetworkItem(dynamic network) {
                 ),
                 const SizedBox(height: 16),
                 // Add the keyboard options
-                const Text(
-                  'Keyboard Options:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                Text(
+                  l10n.keyboardOptions,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
                 CheckboxListTile(
-                  title: const Text('Disable Auto Focus'),
-                  subtitle: const Text('Prevent automatic keyboard popup on page load'),
+                  title: Text(l10n.disableAutoFocus),
+                  subtitle: Text(l10n.disableAutoFocusDesc),
                   value: disableAutoFocus,
                   onChanged: (value) {
                     setState(() {
@@ -2475,8 +2507,8 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   },
                 ),
                 CheckboxListTile(
-                  title: const Text('Use Custom Keyboard'),
-                  subtitle: const Text('Replace system keyboard with custom numeric/alphanumeric keyboard'),
+                  title: Text(l10n.useCustomKeyboard),
+                  subtitle: Text(l10n.useCustomKeyboardDesc2),
                   value: useCustomKeyboard,
                   onChanged: (value) {
                     setState(() {
@@ -2485,8 +2517,8 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   },
                 ),
                 CheckboxListTile(
-                  title: const Text('Disable Copy/Paste'),
-                  subtitle: const Text('Prevent copying and pasting in input fields'),
+                  title: Text(l10n.disableCopyPaste),
+                  subtitle: Text(l10n.disableCopyPasteDesc),
                   value: disableCopyPaste,
                   onChanged: (value) {
                     setState(() {
@@ -2495,9 +2527,9 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   },
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Tip: Tap the magic wand to auto-detect icon from URL',
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                Text(
+                  l10n.tipTapMagicWand,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
               ],
             ),
@@ -2505,7 +2537,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(l10n.cancel),
             ),
             ElevatedButton(
               onPressed: () {
@@ -2519,7 +2551,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   disableCopyPaste: disableCopyPaste,
                 );
               },
-              child: const Text('Create Shortcut'),
+              child: Text(l10n.createShortcut),
             ),
           ],
         ),
@@ -2528,35 +2560,36 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _showChangeAppNameDialog() {
+    final l10n = AppLocalizations.of(context)!;
     final TextEditingController nameController = TextEditingController(text: _customAppName);
     
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change App Name'),
+        title: Text(l10n.changeAppName),
         content: TextField(
           controller: nameController,
-          decoration: const InputDecoration(
-            labelText: 'App Name',
-            hintText: 'Enter custom app name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: l10n.appNameLabel,
+            hintText: l10n.enterCustomAppName,
+            border: const OutlineInputBorder(),
           ),
           maxLength: 30,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           ElevatedButton(
             onPressed: () {
               _saveCustomAppName(nameController.text.trim());
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('App name updated')),
+                SnackBar(content: Text(l10n.appNameUpdated)),
               );
             },
-            child: const Text('Save'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -2564,6 +2597,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _showChangeIconUrlDialog() {
+    final l10n = AppLocalizations.of(context)!;
     final TextEditingController iconController = TextEditingController(text: _customIconUrl);
     
     // Generate suggested favicon URLs
@@ -2575,16 +2609,16 @@ Widget _buildSavedNetworkItem(dynamic network) {
     }
     
     final List<Map<String, String>> suggestedIcons = [
-      {'name': 'Google Favicon (128px) - Recommended', 'url': 'https://www.google.com/s2/favicons?domain=$host&sz=128'},
-      {'name': 'Google Favicon (64px)', 'url': 'https://www.google.com/s2/favicons?domain=$host&sz=64'},
-      {'name': 'Apple Touch Icon (PNG)', 'url': 'https://$host/apple-touch-icon.png'},
-      {'name': 'Direct favicon.ico', 'url': 'https://$host/favicon.ico'},
+      {'name': l10n.googleFavicon128, 'url': 'https://www.google.com/s2/favicons?domain=$host&sz=128'},
+      {'name': l10n.googleFavicon64, 'url': 'https://www.google.com/s2/favicons?domain=$host&sz=64'},
+      {'name': l10n.appleTouchIcon, 'url': 'https://$host/apple-touch-icon.png'},
+      {'name': l10n.directFavicon, 'url': 'https://$host/favicon.ico'},
     ];
     
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Change Icon URL'),
+        title: Text(l10n.changeIconUrl),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -2592,10 +2626,10 @@ Widget _buildSavedNetworkItem(dynamic network) {
             children: [
               TextField(
                 controller: iconController,
-                decoration: const InputDecoration(
-                  labelText: 'Icon URL',
-                  hintText: 'https://example.com/icon.png',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.iconUrl,
+                  hintText: l10n.iconUrlHint,
+                  border: const OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.url,
                 maxLines: 2,
@@ -2612,19 +2646,19 @@ Widget _buildSavedNetworkItem(dynamic network) {
                   children: [
                     Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 20),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Only PNG, JPG, GIF, WebP supported.\nSVG files will NOT work!',
-                        style: TextStyle(fontSize: 11, color: Colors.black87),
+                        l10n.onlyPngJpgSupported,
+                        style: const TextStyle(fontSize: 11, color: Colors.black87),
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Suggested icons:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              Text(
+                l10n.suggestedIcons,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const SizedBox(height: 8),
               ...suggestedIcons.map((icon) => InkWell(
@@ -2661,9 +2695,9 @@ Widget _buildSavedNetworkItem(dynamic network) {
                 ),
               )),
               const SizedBox(height: 8),
-              const Text(
-                'Tap a suggestion to use it, or enter your own PNG/JPG URL.',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+              Text(
+                l10n.tapSuggestionOrEnter,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
           ),
@@ -2671,15 +2705,15 @@ Widget _buildSavedNetworkItem(dynamic network) {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           ElevatedButton(
             onPressed: () {
               final url = iconController.text.trim().toLowerCase();
               if (url.endsWith('.svg')) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('SVG files are not supported. Please use PNG or JPG.'),
+                  SnackBar(
+                    content: Text(l10n.svgNotSupported),
                     backgroundColor: Colors.red,
                   ),
                 );
@@ -2688,10 +2722,10 @@ Widget _buildSavedNetworkItem(dynamic network) {
               _saveCustomIconUrl(iconController.text.trim());
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Icon URL updated')),
+                SnackBar(content: Text(l10n.iconUrlUpdated)),
               );
             },
-            child: const Text('Save'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -2699,24 +2733,25 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _askToCreateShortcut() {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Create Home Screen Shortcut'),
+        title: Text(l10n.createShortcut),
         content: Text(
-          'Would you like to create a home screen shortcut with the name "${_customAppName}"?\n\nThis will add a new icon to your home screen.',
+          l10n.createHomeShortcutQuestion(_customAppName.isNotEmpty ? _customAppName : _websiteName),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Not Now'),
+            child: Text(l10n.notNow),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
               _createHomeScreenShortcut();
             },
-            child: const Text('Create Shortcut'),
+            child: Text(l10n.createShortcut),
           ),
         ],
       ),
@@ -2733,15 +2768,16 @@ Widget _buildSavedNetworkItem(dynamic network) {
     bool useCustomKeyboard = false,
     bool disableCopyPaste = false,
   }) async {
+    final l10n = AppLocalizations.of(context)!;
     if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a shortcut name'), backgroundColor: Colors.orange),
+        SnackBar(content: Text(l10n.pleaseEnterShortcutName), backgroundColor: Colors.orange),
       );
       return;
     }
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a URL'), backgroundColor: Colors.orange),
+        SnackBar(content: Text(l10n.pleaseEnterUrl), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -2759,7 +2795,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
           final ByteData data = await rootBundle.load(iconUrl);
           iconBytes = data.buffer.asUint8List();
         } catch (e) {
-          print('Failed to load asset icon: $e');
+          log('Failed to load asset icon: $e');
           // Continue without icon bytes - Android will use default icon
         }
       }
@@ -2777,7 +2813,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Shortcut "$name" added to home screen'),
+            content: Text(l10n.shortcutAdded(name)),
             backgroundColor: Colors.green,
           ),
         );
@@ -2786,7 +2822,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to create shortcut: $e'),
+            content: Text(l10n.failedToCreateShortcut(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -2795,6 +2831,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   Future<void> _createHomeScreenShortcut() async {
+    final l10n = AppLocalizations.of(context)!;
     try {
       final String appName = _customAppName.isNotEmpty ? _customAppName : _websiteName;
       final String iconUrl = _customIconUrl.isNotEmpty ? _customIconUrl : _faviconUrl;
@@ -2808,7 +2845,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Shortcut "$appName" added to home screen'),
+            content: Text(l10n.shortcutAdded(appName)),
             backgroundColor: Colors.green,
           ),
         );
@@ -2817,7 +2854,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to create shortcut: $e'),
+            content: Text(l10n.failedToCreateShortcut(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -2826,34 +2863,35 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _addViaChrome() {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add to Home Screen via Chrome'),
+        title: Text(l10n.addToHomeViaChrome),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'This will open the website in Chrome. To add a clean shortcut without any badge:',
-              style: TextStyle(fontSize: 14),
+            Text(
+              l10n.chromeAddInstructions,
+              style: const TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 16),
-            _buildStep('1', 'Tap the menu icon (⋮) in Chrome'),
-            _buildStep('2', 'Select "Add to Home screen"'),
-            _buildStep('3', 'Enter your desired name'),
-            _buildStep('4', 'Tap "Add"'),
+            _buildStep('1', l10n.chromeStep1),
+            _buildStep('2', l10n.chromeStep2),
+            _buildStep('3', l10n.chromeStep3),
+            _buildStep('4', l10n.chromeStep4),
             const SizedBox(height: 16),
-            const Text(
-              'The shortcut will use the website\'s icon without any app badge.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Text(
+              l10n.chromeNoBadgeNote,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -2863,7 +2901,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                 await launchUrl(url, mode: LaunchMode.externalApplication);
               }
             },
-            child: const Text('Open in Chrome'),
+            child: Text(l10n.openInChrome),
           ),
         ],
       ),
@@ -2871,10 +2909,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _applyAsAppIcon() async {
+    final l10n = AppLocalizations.of(context)!;
     if (_customIconUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please set an icon URL first'),
+        SnackBar(
+          content: Text(l10n.pleaseSetIconUrlFirst),
           backgroundColor: Colors.orange,
         ),
       );
@@ -2884,12 +2923,12 @@ Widget _buildSavedNetworkItem(dynamic network) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
+      builder: (context) => AlertDialog(
         content: Row(
           children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Text('Applying icon...'),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Text(l10n.applyingIcon),
           ],
         ),
       ),
@@ -2909,27 +2948,22 @@ Widget _buildSavedNetworkItem(dynamic network) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Icon Changed!'),
-            content: const Text(
-              'The app icon has been updated.\n\n'
-              'Note: The icon change will take effect after you:\n'
-              '1. Close the app completely\n'
-              '2. Wait a few seconds\n'
-              '3. The launcher may need time to update\n\n'
-              'Some launchers require a restart to show the new icon.',
+            title: Text(l10n.iconChanged),
+            content: Text(
+              l10n.iconChangedDescription,
             ),
             actions: [
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+                child: Text(l10n.ok),
               ),
             ],
           ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to change app icon'),
+          SnackBar(
+            content: Text(l10n.failedToChangeAppIcon),
             backgroundColor: Colors.red,
           ),
         );
@@ -2938,7 +2972,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
       Navigator.pop(context); // Close loading dialog
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text(l10n.errorWithMessage(e.toString())),
           backgroundColor: Colors.red,
         ),
       );
@@ -4433,6 +4467,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
   }
 
   void _showScaleSettingsDialog() {
+    final l10n = AppLocalizations.of(context)!;
     double originalScale = _keyboardScale; // Store original scale for cancel
     double tempScale = _keyboardScale; // Move outside StatefulBuilder
     showDialog(
@@ -4441,7 +4476,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Keyboard Scale Settings'),
+              title: Text(l10n.keyboardScaleSettings),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -4489,14 +4524,14 @@ Widget _buildSavedNetworkItem(dynamic network) {
                     });
                     Navigator.of(context).pop();
                   },
-                  child: const Text('Cancel'),
+                  child: Text(l10n.cancel),
                 ),
                 ElevatedButton(
                   onPressed: () {
                     // Apply: keep current scale (already applied in real-time)
                     Navigator.of(context).pop();
                   },
-                  child: const Text('OK'),
+                  child: Text(l10n.ok),
                 ),
               ],
             );

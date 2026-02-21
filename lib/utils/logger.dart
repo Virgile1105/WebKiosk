@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 void log(String message) {
-  if (kDebugMode) {
-    debugPrint(message);
-  }
+  // Temporarily enable release logging for debugging keyboard issue
+  // ignore: avoid_print
+  print('[DeviceGate] $message');
 }

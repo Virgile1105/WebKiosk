@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
+import '../generated/l10n/app_localizations.dart';
 
 class PasswordDialog extends StatefulWidget {
   const PasswordDialog({super.key});
@@ -50,7 +51,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
           setState(() {
             _failedAttempts = failedAttempts;
             _lockoutUntil = lockoutTime;
-            _errorMessage = _getLockoutMessage();
+            // Error message will be set in build method
           });
           // Start the countdown timer
           _startLockoutTimer();
@@ -69,12 +70,13 @@ class _PasswordDialogState extends State<PasswordDialog> {
     }
   }
 
-  String _getLockoutMessage() {
+  String _getLockoutMessage(BuildContext context) {
     if (_lockoutUntil == null) return '';
     final remaining = _lockoutUntil!.difference(DateTime.now());
     final minutes = remaining.inMinutes;
     final seconds = remaining.inSeconds % 60;
-    return 'Trop de tentatives échouées.\nRéessayez dans ${minutes}min ${seconds}s';
+    final l10n = AppLocalizations.of(context)!;
+    return l10n.tooManyAttempts(minutes, seconds);
   }
 
   Future<void> _saveLockoutStatus() async {
@@ -135,7 +137,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
     // Check if still locked out
     if (_lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!)) {
       setState(() {
-        _errorMessage = _getLockoutMessage();
+        // Error message will be updated by timer
       });
       return;
     }
@@ -156,7 +158,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
         _lockoutUntil = DateTime.now().add(const Duration(minutes: 15));
         await _saveLockoutStatus();
         setState(() {
-          _errorMessage = _getLockoutMessage();
+          // Error message will be set in build method
           _enteredCode.clear();
           _shuffleKeys();
         });
@@ -166,7 +168,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
       } else {
         await _saveLockoutStatus();
         setState(() {
-          _errorMessage = 'Code incorrect. Veuillez réessayer.\nTentative ${_failedAttempts}/3';
+          // Store attempt count for display in build method
           _enteredCode.clear();
           _shuffleKeys();
         });
@@ -178,7 +180,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted && _lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!)) {
         setState(() {
-          _errorMessage = _getLockoutMessage();
+          // Trigger rebuild to update countdown
         });
         _startLockoutTimer();
       } else if (mounted) {
@@ -192,7 +194,15 @@ class _PasswordDialogState extends State<PasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final bool isLockedOut = _lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!);
+    
+    // Update error message based on current state
+    if (isLockedOut) {
+      _errorMessage = _getLockoutMessage(context);
+    } else if (_failedAttempts > 0 && _failedAttempts < 3 && _errorMessage != null && !_errorMessage!.contains('min')) {
+      _errorMessage = '${l10n.incorrectPassword}\n${l10n.retry} ${_failedAttempts}/3';
+    }
     
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -242,7 +252,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
                       ),
                       Expanded(
                         child: Text(
-                          'Code d\'accès',
+                          l10n.enterPassword,
                           style: TextStyle(
                             fontSize: titleFontSize,
                             fontWeight: FontWeight.bold,
@@ -354,7 +364,7 @@ class _PasswordDialogState extends State<PasswordDialog> {
                         ),
                       ),
                       child: Text(
-                        'Valider',
+                        l10n.ok,
                         style: TextStyle(
                           fontSize: isPortrait ? 16 : 18,
                           color: (_enteredCode.length == _codeLength && !isLockedOut)

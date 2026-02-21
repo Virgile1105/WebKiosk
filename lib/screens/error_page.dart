@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../generated/l10n/app_localizations.dart';
 
 /// Reusable error page widget that displays error information
 /// with Retry and Reload buttons
 class ErrorPage extends StatelessWidget {
-  final String errorTitle;
-  final String errorMessage;
+  final String? errorTitle;
+  final String? errorMessage;
   final Object? error;
   final StackTrace? stackTrace;
   final VoidCallback? onRetry;
@@ -15,8 +16,8 @@ class ErrorPage extends StatelessWidget {
 
   const ErrorPage({
     super.key,
-    this.errorTitle = 'Une erreur est survenue',
-    this.errorMessage = 'L\'application a rencontré un problème inattendu.',
+    this.errorTitle,
+    this.errorMessage,
     this.error,
     this.stackTrace,
     this.onRetry,
@@ -27,6 +28,10 @@ class ErrorPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final displayTitle = errorTitle ?? l10n.errorOccurred;
+    final displayMessage = errorMessage ?? l10n.unexpectedError;
+    
     return Scaffold(
       body: Container(
         color: Colors.white,
@@ -44,7 +49,7 @@ class ErrorPage extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                errorTitle,
+                displayTitle,
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -54,7 +59,7 @@ class ErrorPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                errorMessage,
+                displayMessage,
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey.shade600,
@@ -80,7 +85,7 @@ class ErrorPage extends StatelessWidget {
                           Icon(Icons.info_outline, color: Colors.red.shade700, size: 20),
                           const SizedBox(width: 8),
                           Text(
-                            'Détails techniques',
+                            l10n.technicalDetails,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -92,7 +97,7 @@ class ErrorPage extends StatelessWidget {
                       const SizedBox(height: 12),
                       
                       Text(
-                        'Erreur:',
+                        l10n.errorLabel,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -129,7 +134,7 @@ class ErrorPage extends StatelessWidget {
                     ElevatedButton.icon(
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh),
-                      label: const Text('Réessayer'),
+                      label: Text(l10n.retry),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         backgroundColor: Colors.lightGreen,
@@ -142,7 +147,7 @@ class ErrorPage extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onReload,
                       icon: const Icon(Icons.restart_alt),
-                      label: const Text('Recharger'),
+                      label: Text(l10n.reload),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         side: BorderSide(color: Colors.blue.shade400, width: 2),
@@ -154,7 +159,7 @@ class ErrorPage extends StatelessWidget {
                     ElevatedButton.icon(
                       onPressed: onExit,
                       icon: const Icon(Icons.home),
-                      label: const Text('Quitter'),
+                      label: Text(l10n.quit),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         backgroundColor: Colors.orange,
@@ -179,7 +184,7 @@ class ErrorPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Stack Trace:',
+                        l10n.stackTrace,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -217,7 +222,7 @@ class ErrorPage extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (snapshot.hasData) {
                     return Text(
-                      'Version ${snapshot.data!.version}+${snapshot.data!.buildNumber}',
+                      '${l10n.version} ${snapshot.data!.version}+${snapshot.data!.buildNumber}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade500,
