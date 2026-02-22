@@ -73,10 +73,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   Timer? _networkCheckTimer; // Timer for periodic network status checks
   bool _isCheckingWebsite = false; // Prevent overlapping website status checks
   bool _isResettingInternet = false; // Track if internet reset is in progress
-  int _lastReportedProgress = 0; // Track last progress to throttle updates
+
   SharedPreferences? _cachedPrefs; // Cached SharedPreferences instance
   Timer? _keyboardPositionSaveTimer; // Debounce timer for keyboard position save
   Timer? _minimizedIconPositionSaveTimer; // Debounce timer for minimized icon position save
+  Timer? _loadingIndicatorDelayTimer; // Delay before showing loading indicator
+  bool _showLoadingIndicator = false; // Controls actual visibility of loading overlay
+  int _lastReportedProgress = 0; // Track last progress to throttle updates
 
   @override
   void didChangeDependencies() {
@@ -661,8 +664,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             } else {
               // Actual page finished loading
               if (!mounted) return;
+              _loadingIndicatorDelayTimer?.cancel();
               setState(() {
                 _isLoading = false;
+                _showLoadingIndicator = false;
               });
               _extractFavicon();
               // Prevent auto-focus on input fields to avoid keyboard popup (if option enabled)
@@ -679,20 +684,36 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             // Only set loading for actual URL, not blank page
             if (!url.contains('data:text/html') && url != 'about:blank') {
               if (!mounted) return;
-              _lastReportedProgress = 0; // Reset progress tracker
+              _lastReportedProgress = 0;
+              _loadingIndicatorDelayTimer?.cancel();
               setState(() {
                 _isLoading = true;
                 _currentUrl = url;
                 _extractWebsiteName(url);
               });
+              // Delay showing loading indicator by 150ms - fast pages won't show spinner
+              _loadingIndicatorDelayTimer = Timer(const Duration(milliseconds: 150), () {
+                if (mounted && _isLoading) {
+                  setState(() {
+                    _showLoadingIndicator = true;
+                  });
+                }
+              });
             }
           },
           onProgress: (int progress) {
             if (!mounted) return;
-            // Throttle: only update UI every 10% change to reduce rebuilds
-            final progressPercent = (progress / 10).floor() * 10;
-            if (progressPercent != _lastReportedProgress || progress == 100) {
-              _lastReportedProgress = progressPercent;
+            // Only throttle updates when indicator is visible (slow-loading pages)
+            if (_showLoadingIndicator) {
+              final progressPercent = (progress / 10).floor() * 10;
+              if (progressPercent != _lastReportedProgress || progress == 100) {
+                _lastReportedProgress = progressPercent;
+                setState(() {
+                  _loadingProgress = progress / 100;
+                });
+              }
+            } else {
+              // Fast update for quick pages (indicator not shown yet)
               setState(() {
                 _loadingProgress = progress / 100;
               });
@@ -1116,10 +1137,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           
           // Loading overlay with fade animation to prevent flickering
           AnimatedOpacity(
-            opacity: _isLoading ? 1.0 : 0.0,
+            opacity: _showLoadingIndicator ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 200),
             child: IgnorePointer(
-              ignoring: !_isLoading,
+              ignoring: !_showLoadingIndicator,
               child: Container(
                 color: Colors.white,
                 child: const Center(
@@ -1486,7 +1507,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             left: 0,
             right: 0,
             child: AnimatedOpacity(
-              opacity: _isLoading ? 1.0 : 0.0,
+              opacity: _showLoadingIndicator ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 200),
               child: LinearProgressIndicator(
                 value: _loadingProgress,
@@ -4258,8 +4279,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
       _enableSystemKeyboards();
     }
     
-    // Cancel network check timer
+    // Cancel all timers
     _networkCheckTimer?.cancel();
+    _keyboardPositionSaveTimer?.cancel();
+    _minimizedIconPositionSaveTimer?.cancel();
+    _loadingIndicatorDelayTimer?.cancel();
     
     // Clean up WebView controller
     _controller.clearCache();
