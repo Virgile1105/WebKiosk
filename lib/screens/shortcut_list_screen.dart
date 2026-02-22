@@ -32,6 +32,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   StreamSubscription? _bluetoothSubscription;
   Timer? _deviceRotationTimer;
   int _currentDeviceIndex = 0;
+  bool _alwaysShowTopBar = false;
 
   @override
   void initState() {
@@ -72,6 +73,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         _loadShortcuts(),
         _loadAppVersion(),
         _loadDeviceName(),
+        _loadTopBarSetting(),
       ]);
       if (mounted) {
         setState(() {
@@ -118,6 +120,19 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
       }
     } catch (e) {
       log('Error loading device name: $e');
+    }
+  }
+
+  Future<void> _loadTopBarSetting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) {
+        setState(() {
+          _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+        });
+      }
+    } catch (e) {
+      log('Error loading top bar setting: $e');
     }
   }
 
@@ -237,8 +252,9 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
         ),
       );
 
-      // Reload device name when returning from settings
+      // Reload settings when returning from settings
       await _loadDeviceName();
+      await _loadTopBarSetting();
 
       if (result != null) {
         if (result is ShortcutItem) {
@@ -796,7 +812,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           // Background image
           Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.only(top: 56),
+              padding: EdgeInsets.only(top: 56 + (_alwaysShowTopBar ? 24 : 0)),
               child: Image.asset(
                 'assets/images/OVOL.png',
                 fit: BoxFit.cover,
@@ -813,7 +829,8 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
               final baseLogoSize = isPortrait ? 90.0 : 120.0;
               final coef = isTablet ? isPortrait ? 0.3 : 0 : 1;
               final logoSize = isTablet ? baseLogoSize * 1.9 : baseLogoSize;
-              final topMargin = isPortrait ? 30.0* coef : 20.0* coef ;
+              final topBarOffset = _alwaysShowTopBar ? 24.0 : 0.0;
+              final topMargin = (isPortrait ? 30.0 * coef : 20.0 * coef) + topBarOffset;
               return Align(
                 alignment: Alignment.topRight,
                 child: Padding(
