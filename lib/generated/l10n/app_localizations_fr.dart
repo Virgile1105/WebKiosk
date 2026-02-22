@@ -94,7 +94,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get deviceOwnerMode => 'Mode propriétaire de l\'appareil';
 
   @override
-  String get enabled => 'ACTIVÉ';
+  String get enabled => 'ACTIF';
 
   @override
   String get disabled => 'DÉSACTIVÉ';
@@ -205,7 +205,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get useCustomKeyboardDesc =>
-      'Afficher le clavier numérique dans le coin inférieur gauche (la mise au point automatique peut être contrôlée séparément)';
+      'Afficher le clavier numérique dans le coin inférieur gauche';
 
   @override
   String get disableCopyPaste => 'Désactiver Copier/Coller';
@@ -484,7 +484,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String tooManyAttempts(Object minutes, Object seconds) {
-    return 'Trop de tentatives échouées.\\nRéessayez dans ${minutes}min ${seconds}s';
+    return 'Trop de tentatives.\nRéessayez dans ${minutes}min ${seconds}s';
   }
 
   @override
@@ -1120,4 +1120,35 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get unhandledError => 'Erreur non gérée';
+
+  @override
+  String get serverRefused => 'Serveur refusé';
+
+  @override
+  String get serverTimeout => 'Délai d\'attente du serveur';
+
+  @override
+  String get serverProblem => 'Problème serveur';
+
+  @override
+  String get unknownNetwork => 'Réseau inconnu';
+
+  @override
+  String signalFormat(Object strength) {
+    return 'Signal : $strength';
+  }
+
+  @override
+  String get unknownError => 'Erreur inconnue';
+
+  @override
+  String get unknownUrl => 'URL inconnue';
+
+  @override
+  String statusFormat(Object status) {
+    return 'État : $status';
+  }
+
+  @override
+  String get checking => 'Vérification...';
 }

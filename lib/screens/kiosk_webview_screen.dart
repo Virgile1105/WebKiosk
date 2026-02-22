@@ -1301,6 +1301,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                     Expanded(
                                       child: Builder(
                                         builder: (context) {
+                                          final l10n = AppLocalizations.of(context)!;
                                           // Get live website status check
                                           final websiteCanConnect = _websiteStatus?['canConnect'] == true;
                                           final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
@@ -1326,8 +1327,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                             iconColor = Colors.green;
                                             textColor = Colors.green.shade800;
                                             icon = Icons.cloud_done;
-                                            title = 'Internet OK';
-                                            subtitle = 'Connected';
+                                            title = l10n.internetOk;
+                                            subtitle = l10n.connected;
                                           } else if (websiteError == 'connection_refused' || 
                                                      websiteError == 'connection_reset' ||
                                                      websiteError == 'timed_out' ||
@@ -1342,9 +1343,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           iconColor = Colors.orange;
                                           textColor = Colors.orange.shade800;
                                           icon = Icons.error_outline;
-                                          title = 'Erreur du site web';
-                                          subtitle = websiteError == 'connection_refused' ? 'Serveur refusé' : 
-                                                     websiteError == 'timed_out' ? 'Délai d\'attente du serveur' : 'Problème serveur';
+                                          title = l10n.websiteError;
+                                          subtitle = websiteError == 'connection_refused' ? l10n.serverRefused : 
+                                                     websiteError == 'timed_out' ? l10n.serverTimeout : l10n.serverProblem;
                                         } else if (websiteError == 'name_not_resolved' || !hasInternet) {
                                           // State 1: No internet at all
                                           // - name_not_resolved: DNS failed (no internet)
@@ -1354,8 +1355,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           iconColor = Colors.red;
                                           textColor = Colors.red.shade800;
                                           icon = Icons.cloud_off;
-                                          title = 'Pas d\'Internet';
-                                          subtitle = 'Non disponible';
+                                          title = l10n.noInternet;
+                                          subtitle = l10n.notAvailable;
                                         } else {
                                           // State 1: Unknown/no connection
                                           bgColor = Colors.red.shade50;
@@ -1363,8 +1364,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           iconColor = Colors.red;
                                           textColor = Colors.red.shade800;
                                           icon = Icons.cloud_off;
-                                          title = 'Pas d\'Internet';
-                                          subtitle = 'Non disponible';
+                                          title = l10n.noInternet;
+                                          subtitle = l10n.notAvailable;
                                         }
                                         
                                           return Container(
@@ -1405,7 +1406,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                                 // Dynamic status description
                                                 Text(
                                                   _websiteStatus != null 
-                                                    ? 'État: ${_websiteStatus!['errorMessage'] ?? _websiteStatus!['error'] ?? 'Vérification...'}'
+                                                    ? l10n.statusFormat(_websiteStatus!['errorMessage'] ?? _websiteStatus!['error'] ?? l10n.checking)
                                                     : _errorDescription,
                                                   style: const TextStyle(
                                                     fontSize: 8,
@@ -1538,6 +1539,7 @@ Widget _buildNetworkStatus(dynamic currentNetwork) {
       return const SizedBox.shrink();
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final networkMap = Map<String, dynamic>.from(currentNetwork as Map);
     final isDisconnected = networkMap['status'] == 'disconnected';
 
@@ -1545,7 +1547,7 @@ Widget _buildNetworkStatus(dynamic currentNetwork) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'WIFI Connection',
+          l10n.wifiConnection,
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -1575,7 +1577,7 @@ Widget _buildNetworkStatus(dynamic currentNetwork) {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isDisconnected ? 'Disconnected' : (networkMap['ssid'] ?? 'Unknown Network'),
+                      isDisconnected ? l10n.disconnected : (networkMap['ssid'] ?? l10n.unknownNetwork),
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -1584,7 +1586,7 @@ Widget _buildNetworkStatus(dynamic currentNetwork) {
                     ),
                     if (!isDisconnected && networkMap['signalStrength'] != null)
                       Text(
-                        'Signal: ${networkMap['signalStrength']}',
+                        l10n.signalFormat(networkMap['signalStrength']),
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -1661,16 +1663,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
     final l10n = AppLocalizations.of(context)!;
     return Drawer(
       child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.blue.shade700,
-              Colors.blue.shade900,
-            ],
-          ),
-        ),
+        color: const Color.fromRGBO(51, 61, 71, 1),
         child: SafeArea(
           child: Column(
             children: [

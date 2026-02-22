@@ -466,7 +466,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String tooManyAttempts(Object minutes, Object seconds) {
-    return 'Too many failed attempts.\\nTry again in ${minutes}min ${seconds}s';
+    return 'Too many failed attempts.\nTry again in ${minutes}min ${seconds}s';
   }
 
   @override
@@ -1091,4 +1091,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get unhandledError => 'Unhandled Error';
+
+  @override
+  String get serverRefused => 'Server refused';
+
+  @override
+  String get serverTimeout => 'Server timeout';
+
+  @override
+  String get serverProblem => 'Server problem';
+
+  @override
+  String get unknownNetwork => 'Unknown Network';
+
+  @override
+  String signalFormat(Object strength) {
+    return 'Signal: $strength';
+  }
+
+  @override
+  String get unknownError => 'Unknown error';
+
+  @override
+  String get unknownUrl => 'Unknown URL';
+
+  @override
+  String statusFormat(Object status) {
+    return 'Status: $status';
+  }
+
+  @override
+  String get checking => 'Checking...';
 }

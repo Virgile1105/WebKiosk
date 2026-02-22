@@ -188,9 +188,12 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
                     ),
                     title: Row(
                       children: [
-                        Text(
-                          l10n.deviceOwnerMode,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        Flexible(
+                          child: Text(
+                            l10n.deviceOwnerMode,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Container(

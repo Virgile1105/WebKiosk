@@ -500,20 +500,6 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
                 ),
                 const SizedBox(height: 16),
                 SwitchListTile(
-                  title: Text(l10n.disableKeyboard),
-                  subtitle: Text(
-                    l10n.disableKeyboardDesc,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  value: disableAutoFocus,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      disableAutoFocus = value;
-                    });
-                  },
-                  contentPadding: EdgeInsets.zero,
-                ),
-                SwitchListTile(
                   title: Text(l10n.useCustomKeyboard),
                   subtitle: Text(
                     l10n.useCustomKeyboardDesc,
@@ -779,6 +765,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   Widget build(BuildContext context) {
     log('Building ShortcutListScreen - appVersion: $_appVersion');
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
           _deviceName,
@@ -796,29 +783,68 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           const SizedBox(width: 16),
         ],
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                    strokeWidth: 4,
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Loading DeviceGate...',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
+      body: Stack(
+        children: [
+          // Background image
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 56),
+              child: Image.asset(
+                'assets/images/OVOL.png',
+                fit: BoxFit.cover,
+                alignment: Alignment.topLeft,
               ),
-            )
-          : _shortcuts.isEmpty
-              ? _buildEmptyState()
-              : _buildShortcutGrid(),
+            ),
+          ),
+          // Logo top right
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isPortrait = constraints.maxHeight > constraints.maxWidth;
+              final shortestSide = MediaQuery.of(context).size.shortestSide;
+              final isTablet = shortestSide >= 600;
+              final baseLogoSize = isPortrait ? 90.0 : 120.0;
+              final coef = isTablet ? isPortrait ? 0.3 : 0 : 1;
+              final logoSize = isTablet ? baseLogoSize * 1.9 : baseLogoSize;
+              final topMargin = isPortrait ? 30.0* coef : 20.0* coef ;
+              return Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(top: topMargin, right: 25),
+                  child: Image.asset(
+                    'assets/images/logo_ovol.png',
+                    width: logoSize,
+                    height: logoSize,
+                  ),
+                ),
+              );
+            },
+          ),
+          // Content
+          _isLoading
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                        strokeWidth: 4,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Loading DeviceGate...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : _shortcuts.isEmpty
+                  ? _buildEmptyState()
+                  : _buildShortcutGrid(),
+        ],
+      ),
     );
   }
 

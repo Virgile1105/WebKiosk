@@ -188,22 +188,6 @@ class _AddShortcutScreenState extends State<AddShortcutScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Disable Keyboard switch
-          SwitchListTile(
-            title: Text(l10n.disableKeyboard),
-            subtitle: Text(
-              l10n.disableKeyboardDesc,
-              style: const TextStyle(fontSize: 12),
-            ),
-            value: _disableAutoFocus,
-            onChanged: (value) {
-              setState(() {
-                _disableAutoFocus = value;
-              });
-            },
-            contentPadding: EdgeInsets.zero,
-          ),
-
           // Use Custom Keyboard switch
           SwitchListTile(
             title: Text(l10n.useCustomKeyboard),

@@ -59,11 +59,16 @@ class _PasswordDialogState extends State<PasswordDialog> {
           // Lockout expired, reset
           await prefs.remove('failed_password_attempts');
           await prefs.remove('lockout_until_timestamp');
+          setState(() {
+            _failedAttempts = 0;
+          });
         }
       } else {
-        setState(() {
-          _failedAttempts = failedAttempts;
-        });
+        // No lockout timestamp - reset any stale failed attempts
+        if (failedAttempts > 0) {
+          await prefs.remove('failed_password_attempts');
+        }
+        // _failedAttempts stays at 0 (default)
       }
     } catch (e) {
       log('Error loading lockout status: $e');
@@ -168,7 +173,8 @@ class _PasswordDialogState extends State<PasswordDialog> {
       } else {
         await _saveLockoutStatus();
         setState(() {
-          // Store attempt count for display in build method
+          // Set error message to trigger display in build method
+          _errorMessage = 'incorrect'; // Will be replaced with localized text in build()
           _enteredCode.clear();
           _shuffleKeys();
         });

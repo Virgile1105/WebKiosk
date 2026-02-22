@@ -977,7 +977,7 @@ abstract class AppLocalizations {
   /// No description provided for @tooManyAttempts.
   ///
   /// In en, this message translates to:
-  /// **'Too many failed attempts.\\nTry again in {minutes}min {seconds}s'**
+  /// **'Too many failed attempts.\nTry again in {minutes}min {seconds}s'**
   String tooManyAttempts(Object minutes, Object seconds);
 
   /// No description provided for @passwordMismatch.
@@ -2101,6 +2101,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unhandled Error'**
   String get unhandledError;
+
+  /// No description provided for @serverRefused.
+  ///
+  /// In en, this message translates to:
+  /// **'Server refused'**
+  String get serverRefused;
+
+  /// No description provided for @serverTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Server timeout'**
+  String get serverTimeout;
+
+  /// No description provided for @serverProblem.
+  ///
+  /// In en, this message translates to:
+  /// **'Server problem'**
+  String get serverProblem;
+
+  /// No description provided for @unknownNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown Network'**
+  String get unknownNetwork;
+
+  /// No description provided for @signalFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Signal: {strength}'**
+  String signalFormat(Object strength);
+
+  /// No description provided for @unknownError.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown error'**
+  String get unknownError;
+
+  /// No description provided for @unknownUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown URL'**
+  String get unknownUrl;
+
+  /// No description provided for @statusFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}'**
+  String statusFormat(Object status);
+
+  /// No description provided for @checking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking...'**
+  String get checking;
 }
 
 class _AppLocalizationsDelegate
