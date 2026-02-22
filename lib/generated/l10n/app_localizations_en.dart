@@ -296,7 +296,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ipAddress => 'IP Address';
 
   @override
+  String get productName => 'Product Name';
+
+  @override
   String get androidModel => 'Android Model';
+
+  @override
+  String get serialNumber => 'Serial Number';
+
+  @override
+  String get androidVersion => 'Android Version';
+
+  @override
+  String get securityPatch => 'Last Security Update';
 
   @override
   String get notAvailable => 'Not available';

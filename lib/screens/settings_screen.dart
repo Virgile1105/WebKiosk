@@ -300,7 +300,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: const Icon(Icons.settings_applications, color: Colors.deepPurple),
+                  leading: const Icon(Icons.settings_suggest, color: Colors.blueGrey),
                   title: Text(l10n.advancedSettings),
                   subtitle: Text(l10n.advancedSettingsDesc),
                   trailing: const Icon(Icons.chevron_right),

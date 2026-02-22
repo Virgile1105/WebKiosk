@@ -309,7 +309,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String get ipAddress => 'Adresse IP';
 
   @override
+  String get productName => 'Nom du produit';
+
+  @override
   String get androidModel => 'Modèle Android';
+
+  @override
+  String get serialNumber => 'Numéro de série';
+
+  @override
+  String get androidVersion => 'Version Android';
+
+  @override
+  String get securityPatch => 'Dernière mise à jour';
 
   @override
   String get notAvailable => 'Non disponible';

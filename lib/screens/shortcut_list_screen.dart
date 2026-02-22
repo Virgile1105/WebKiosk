@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../models/shortcut_item.dart';
 import '../generated/l10n/app_localizations.dart';
+import '../services/bluetooth_service.dart';
 import 'kiosk_webview_screen.dart';
 import 'settings_screen.dart';
 import 'password_dialog.dart';
@@ -28,7 +29,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
   String _appVersion = '';
   String _deviceName = 'DeviceGate';
   List<Map<String, dynamic>> _bluetoothDevices = [];
-  Timer? _bluetoothTimer;
+  StreamSubscription? _bluetoothSubscription;
   Timer? _deviceRotationTimer;
   int _currentDeviceIndex = 0;
 
@@ -37,10 +38,17 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     super.initState();
     _loadData();
     _loadBluetoothDevices();
-    // Update Bluetooth status every 5 seconds
-    _bluetoothTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _loadBluetoothDevices();
-    });
+    // Listen to Bluetooth status changes via BluetoothService
+    _bluetoothDevices = BluetoothService().devices;
+    _bluetoothSubscription = BluetoothService().deviceStream.listen(
+      (devices) {
+        if (mounted) {
+          setState(() {
+            _bluetoothDevices = devices;
+          });
+        }
+      },
+    );
     // Rotate through devices every 3 seconds if multiple
     _deviceRotationTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (_bluetoothDevices.length > 1) {
@@ -53,7 +61,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
   @override
   void dispose() {
-    _bluetoothTimer?.cancel();
+    _bluetoothSubscription?.cancel();
     _deviceRotationTimer?.cancel();
     super.dispose();
   }
@@ -897,7 +905,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
 
     // Priority: Show only connected devices if any exist, otherwise show all paired devices
     final connectedDevices = _bluetoothDevices
-        .where((device) => device['connected'] == 'Connected')
+        .where((device) => device['isConnected'] == true)
         .toList();
     
     final devicesToShow = connectedDevices.isNotEmpty ? connectedDevices : _bluetoothDevices;
@@ -906,8 +914,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     final device = devicesToShow[_currentDeviceIndex % devicesToShow.length];
     final name = device['name'] ?? 'Unknown';
     final type = device['type'] ?? '';
-    final connected = device['connected'] ?? 'Disconnected';
-    final isConnected = connected == 'Connected';
+    final isConnected = device['isConnected'] == true;
     
     // Determine icon based on type or device name
     IconData deviceIcon;

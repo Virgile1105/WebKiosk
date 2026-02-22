@@ -43,8 +43,12 @@ import android.net.Uri
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
+    private val BLUETOOTH_EVENT_CHANNEL = "devicegate.app/bluetooth_events"
     private val TAG = "DeviceGate"
     private var methodChannel: MethodChannel? = null
+    private var bluetoothEventChannel: EventChannel? = null
+    private val bluetoothEventSinks = mutableListOf<EventChannel.EventSink>()
+    private var bluetoothReceiver: BroadcastReceiver? = null
     private var pendingUrl: String? = null
     private var urlAlreadyRetrieved = false
     private var devicePolicyManager: DevicePolicyManager? = null
@@ -106,6 +110,31 @@ class MainActivity : FlutterActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Error auto-granting BLUETOOTH_CONNECT permission", e)
                 }
+            }
+            
+            // Auto-grant READ_PHONE_STATE for serial number access
+            try {
+                val admin = adminComponent
+                if (admin != null) {
+                    val phoneStateState = devicePolicyManager?.getPermissionGrantState(
+                        admin,
+                        packageName,
+                        Manifest.permission.READ_PHONE_STATE
+                    )
+                    if (phoneStateState != android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                        devicePolicyManager?.setPermissionGrantState(
+                            admin,
+                            packageName,
+                            Manifest.permission.READ_PHONE_STATE,
+                            android.app.admin.DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                        Log.i(TAG, "READ_PHONE_STATE permission auto-granted on startup")
+                    } else {
+                        Log.d(TAG, "READ_PHONE_STATE permission already granted")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error auto-granting READ_PHONE_STATE permission", e)
             }
             
             // Auto-grant WRITE_SECURE_SETTINGS for screen timeout control
@@ -209,6 +238,29 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        
+        // Set up Bluetooth EventChannel for status updates
+        bluetoothEventChannel = EventChannel(flutterEngine.dartExecutor.binaryMessenger, BLUETOOTH_EVENT_CHANNEL)
+        bluetoothEventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                events?.let { sink ->
+                    bluetoothEventSinks.add(sink)
+                    Log.d(TAG, "Bluetooth EventSink added, total: ${bluetoothEventSinks.size}")
+                    // Register receiver only once (when first listener connects)
+                    if (bluetoothEventSinks.size == 1) {
+                        registerBluetoothReceiver()
+                    }
+                    // Send initial state to this new listener
+                    sendBluetoothUpdate()
+                }
+            }
+            
+            override fun onCancel(arguments: Any?) {
+                // We can't identify which sink cancelled, so we keep using the list
+                // The EventChannel framework handles cleanup
+                Log.d(TAG, "Bluetooth EventSink onCancel called")
+            }
+        })
         
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -2317,16 +2369,105 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun getDeviceModel(): Map<String, String> {
+        // Get device name from Settings.Global.DEVICE_NAME (marketing name like "Galaxy A12")
+        val deviceName = try {
+            Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        
+        // Get serial number - try multiple methods
+        val serialNumber = getDeviceSerialNumber()
+        
         return mapOf(
             "manufacturer" to Build.MANUFACTURER,
             "model" to Build.MODEL,
             "device" to Build.DEVICE,
-            "product" to Build.PRODUCT
+            "product" to Build.PRODUCT,
+            "deviceName" to deviceName,
+            "serialNumber" to serialNumber,
+            "androidVersion" to Build.VERSION.RELEASE,
+            "securityPatch" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Build.VERSION.SECURITY_PATCH else ""
         )
     }
+    
+    private fun getDeviceSerialNumber(): String {
+        // Method 1: Try Build.getSerial() with READ_PHONE_STATE permission
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val serial = Build.getSerial()
+                if (serial.isNotEmpty() && serial != "unknown") {
+                    Log.i(TAG, "Serial from Build.getSerial(): $serial")
+                    return serial
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val serial = Build.SERIAL
+                if (serial.isNotEmpty() && serial != "unknown") {
+                    Log.i(TAG, "Serial from Build.SERIAL: $serial")
+                    return serial
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Build.getSerial() security exception: ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Build.getSerial() error: ${e.message}")
+        }
+        
+        // Method 2: Try system property via reflection
+        try {
+            val c = Class.forName("android.os.SystemProperties")
+            val get = c.getMethod("get", String::class.java)
+            val serial = get.invoke(c, "ro.serialno") as? String
+            if (!serial.isNullOrEmpty() && serial != "unknown") {
+                Log.i(TAG, "Serial from ro.serialno: $serial")
+                return serial
+            }
+            // Try alternative property names
+            val serial2 = get.invoke(c, "ril.serialnumber") as? String
+            if (!serial2.isNullOrEmpty() && serial2 != "unknown") {
+                Log.i(TAG, "Serial from ril.serialnumber: $serial2")
+                return serial2
+            }
+            val serial3 = get.invoke(c, "ro.boot.serialno") as? String
+            if (!serial3.isNullOrEmpty() && serial3 != "unknown") {
+                Log.i(TAG, "Serial from ro.boot.serialno: $serial3")
+                return serial3
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "SystemProperties method failed: ${e.message}")
+        }
+        
+        // Method 3: Try reading from /sys/class/android_usb/android0/iSerial
+        try {
+            val file = java.io.File("/sys/class/android_usb/android0/iSerial")
+            if (file.exists() && file.canRead()) {
+                val serial = file.readText().trim()
+                if (serial.isNotEmpty() && serial != "unknown") {
+                    Log.i(TAG, "Serial from iSerial file: $serial")
+                    return serial
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "iSerial file read failed: ${e.message}")
+        }
+        
+        // Method 4: Fallback to Android ID (unique but not the hardware serial)
+        try {
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+            if (!androidId.isNullOrEmpty()) {
+                Log.i(TAG, "Using Android ID as fallback: $androidId")
+                return androidId
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Android ID fallback failed: ${e.message}")
+        }
+        
+        return ""
+    }
 
-    private fun getBluetoothDevices(): List<Map<String, String>> {
-        val devicesList = mutableListOf<Map<String, String>>()
+    private fun getBluetoothDevices(): List<Map<String, Any>> {
+        val devicesList = mutableListOf<Map<String, Any>>()
         
         try {
             Log.i(TAG, "Getting Bluetooth devices - API Level: ${Build.VERSION.SDK_INT}")
@@ -2429,7 +2570,7 @@ class MainActivity : FlutterActivity() {
             
             bondedDevices.forEach { device ->
                 try {
-                    val deviceInfo = mutableMapOf<String, String>()
+                    val deviceInfo = mutableMapOf<String, Any>()
                     val name = try { device.name } catch (e: SecurityException) { null }
                     val address = try { device.address } catch (e: SecurityException) { null }
                     
@@ -2447,8 +2588,9 @@ class MainActivity : FlutterActivity() {
                         address?.let { connectedDevices.contains(it) } ?: false
                     }
                     
-                    deviceInfo["connected"] = if (isConnected) "Connected" else "Disconnected"
-                    Log.d(TAG, "  Connection status: ${deviceInfo["connected"]} (checked via reflection: $isConnected)")
+                    // Use boolean for connection status (more reliable than string comparison)
+                    deviceInfo["isConnected"] = isConnected
+                    Log.d(TAG, "  Connection status: isConnected=$isConnected")
                     
                     // Check bond state
                     val bondState = when (device.bondState) {
@@ -2546,6 +2688,75 @@ class MainActivity : FlutterActivity() {
         }
         
         return devicesList
+    }
+
+    private fun registerBluetoothReceiver() {
+        if (bluetoothReceiver != null) return
+        
+        bluetoothReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    BluetoothDevice.ACTION_ACL_CONNECTED,
+                    BluetoothDevice.ACTION_ACL_DISCONNECTED,
+                    BluetoothAdapter.ACTION_STATE_CHANGED,
+                    BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                        Log.d(TAG, "Bluetooth event received: ${intent.action}")
+                        sendBluetoothUpdate()
+                    }
+                }
+            }
+        }
+        
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        }
+        
+        // Bluetooth broadcasts come from the system, so we need RECEIVER_EXPORTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(bluetoothReceiver, filter)
+        }
+        Log.d(TAG, "Bluetooth receiver registered")
+        
+        // Send initial state
+        sendBluetoothUpdate()
+    }
+    
+    private fun unregisterBluetoothReceiver() {
+        bluetoothReceiver?.let {
+            try {
+                unregisterReceiver(it)
+                Log.d(TAG, "Bluetooth receiver unregistered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error unregistering Bluetooth receiver", e)
+            }
+        }
+        bluetoothReceiver = null
+    }
+    
+    private fun sendBluetoothUpdate() {
+        try {
+            val devices = getBluetoothDevices()
+            runOnUiThread {
+                // Send to all registered sinks, removing any that fail
+                val iterator = bluetoothEventSinks.iterator()
+                while (iterator.hasNext()) {
+                    try {
+                        iterator.next().success(devices)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to send to EventSink, removing: ${e.message}")
+                        iterator.remove()
+                    }
+                }
+                Log.d(TAG, "Sent Bluetooth update to ${bluetoothEventSinks.size} listeners")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending Bluetooth update", e)
+        }
     }
 
     // Developer mode and USB settings functions

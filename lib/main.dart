@@ -9,6 +9,7 @@ import 'screens/error_page.dart';
 import 'models/shortcut_item.dart';
 import 'utils/logger.dart';
 import 'generated/l10n/app_localizations.dart';
+import 'services/bluetooth_service.dart';
 
 const MethodChannel platform = MethodChannel('devicegate.app/shortcut');
 
@@ -67,6 +68,9 @@ void main() async {
   // Run app in guarded zone to catch all uncaught errors
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
+    
+    // Initialize Bluetooth service singleton
+    BluetoothService().initialize();
     
     try {
       // Load user preference for top bar

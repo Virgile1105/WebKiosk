@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart';
 import '../generated/l10n/app_localizations.dart';
+import '../services/bluetooth_service.dart';
 import 'error_page.dart';
 
 class InfoScreen extends StatefulWidget {
@@ -22,13 +24,39 @@ class _InfoScreenState extends State<InfoScreen> {
   static const platform = MethodChannel('devicegate.app/shortcut');
   String? _ipAddress;
   List<Map<String, dynamic>> _bluetoothDevices = [];
+  StreamSubscription? _bluetoothSubscription;
+  String? _productName;
   String? _androidDeviceModel;
+  String? _serialNumber;
+  String? _androidVersion;
+  String? _securityPatch;
   bool _isLoadingBluetooth = true;
 
   @override
   void initState() {
     super.initState();
     _loadDeviceInfo();
+    // Listen to Bluetooth status changes via BluetoothService
+    _bluetoothDevices = BluetoothService().devices;
+    if (_bluetoothDevices.isNotEmpty) {
+      _isLoadingBluetooth = false;
+    }
+    _bluetoothSubscription = BluetoothService().deviceStream.listen(
+      (devices) {
+        if (mounted) {
+          setState(() {
+            _bluetoothDevices = devices;
+            _isLoadingBluetooth = false;
+          });
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _bluetoothSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDeviceInfo() async {
@@ -65,14 +93,26 @@ class _InfoScreenState extends State<InfoScreen> {
         log('Error getting Bluetooth devices: $e');
       }
 
-      // Get Android device model
+      // Get Android device model and product name
       String? androidDeviceModel;
+      String? productName;
+      String? serialNumber;
+      String? androidVersion;
+      String? securityPatch;
       try {
         final deviceModel = await platform.invokeMethod('getDeviceModel');
         if (deviceModel != null && deviceModel is Map) {
           final manufacturer = deviceModel['manufacturer'] ?? '';
           final model = deviceModel['model'] ?? '';
+          final deviceName = deviceModel['deviceName'] ?? '';
+          final serial = deviceModel['serialNumber'] ?? '';
+          final version = deviceModel['androidVersion'] ?? '';
+          final patch = deviceModel['securityPatch'] ?? '';
           androidDeviceModel = '$manufacturer $model'.trim();
+          productName = deviceName.isNotEmpty ? deviceName : null;
+          serialNumber = serial.isNotEmpty ? serial : null;
+          androidVersion = version.isNotEmpty ? version : null;
+          securityPatch = patch.isNotEmpty ? patch : null;
         }
       } catch (e) {
         log('Error getting device model: $e');
@@ -82,7 +122,11 @@ class _InfoScreenState extends State<InfoScreen> {
         setState(() {
           _ipAddress = ipAddress;
           _bluetoothDevices = bluetoothDevices;
+          _productName = productName;
           _androidDeviceModel = androidDeviceModel;
+          _serialNumber = serialNumber;
+          _androidVersion = androidVersion;
+          _securityPatch = securityPatch;
           _isLoadingBluetooth = false;
         });
       }
@@ -92,7 +136,11 @@ class _InfoScreenState extends State<InfoScreen> {
         setState(() {
           _ipAddress = null;
           _bluetoothDevices = [];
+          _productName = null;
           _androidDeviceModel = null;
+          _serialNumber = null;
+          _androidVersion = null;
+          _securityPatch = null;
           _isLoadingBluetooth = false;
         });
         final l10n = AppLocalizations.of(context)!;
@@ -186,9 +234,17 @@ class _InfoScreenState extends State<InfoScreen> {
             const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow(l10n.deviceName, widget.deviceName),
             const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildInfoRow(l10n.productName, _productName ?? l10n.notAvailable),
+            const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow(l10n.androidModel, _androidDeviceModel ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildInfoRow(l10n.serialNumber, _serialNumber ?? l10n.notAvailable),
+            const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow(l10n.ipAddress, _ipAddress ?? l10n.notAvailable),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildInfoRow(l10n.androidVersion, _androidVersion ?? l10n.notAvailable),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+            _buildInfoRow(l10n.securityPatch, _securityPatch ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),
             
             // Bluetooth Devices Section
@@ -197,115 +253,128 @@ class _InfoScreenState extends State<InfoScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Title on its own line
                   Row(
                     children: [
-                      SizedBox(
-                        width: 160,
-                        child: Text(
-                          l10n.bluetoothDevices,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
+                      Icon(
+                        Icons.bluetooth,
+                        size: 20,
+                        color: Colors.blue.shade700,
                       ),
-                      Expanded(
-                        child: _isLoadingBluetooth
-                            ? Text(
-                                l10n.loadingApps,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                              )
-                            : _bluetoothDevices.isEmpty
-                                ? Text(
-                                    l10n.noBluetooth,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.black87,
-                                    ),
-                                  )
-                                : Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: _bluetoothDevices.map((device) {
-                                      final name = device['name'] ?? l10n.unknown;
-                                      final type = device['type'] ?? '';
-                                      final connected = device['connected'] ?? l10n.unknown;
-                                      final isConnected = connected == l10n.connected;
-                                      
-                                      // Determine icon based on type or device name
-                                      IconData deviceIcon;
-                                      final nameLower = name.toLowerCase();
-                                      if (nameLower.contains('scan') || nameLower.contains('barcode') || nameLower.contains('powerscan')) {
-                                        deviceIcon = Icons.document_scanner;
-                                      } else if (type == l10n.deviceTypeKeyboard) {
-                                        deviceIcon = Icons.keyboard;
-                                      } else if (type == l10n.deviceTypeScanner) {
-                                        deviceIcon = Icons.document_scanner;
-                                      } else if (type == l10n.deviceTypeMouse) {
-                                        deviceIcon = Icons.mouse;
-                                      } else if (type == l10n.deviceTypeAudio) {
-                                        deviceIcon = Icons.headphones;
-                                      } else {
-                                        deviceIcon = Icons.bluetooth;
-                                      }
-                                      
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 8),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              deviceIcon,
-                                              size: 20,
-                                              color: isConnected ? Colors.green.shade700 : Colors.grey.shade500,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Text(
-                                                        name,
-                                                        style: const TextStyle(
-                                                          fontSize: 16,
-                                                          color: Colors.black87,
-                                                          fontWeight: FontWeight.w500,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Container(
-                                                        width: 8,
-                                                        height: 8,
-                                                        decoration: BoxDecoration(
-                                                          shape: BoxShape.circle,
-                                                          color: isConnected ? Colors.green : Colors.grey,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  if (type.isNotEmpty)
-                                                    Text(
-                                                      '$type • $connected',
-                                                      style: TextStyle(
-                                                        fontSize: 13,
-                                                        color: Colors.grey.shade600,
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ),
+                      const SizedBox(width: 8),
+                      Text(
+                        l10n.bluetoothDevices,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  // Devices list below
+                  if (_isLoadingBluetooth)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28),
+                      child: Text(
+                        l10n.loadingApps,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    )
+                  else if (_bluetoothDevices.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28),
+                      child: Text(
+                        l10n.noBluetooth,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(left: 28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _bluetoothDevices.map((device) {
+                          final name = device['name'] ?? l10n.unknown;
+                          final type = device['type'] ?? '';
+                          final isConnected = device['isConnected'] == true;
+                          
+                          // Determine icon based on type or device name
+                          IconData deviceIcon;
+                          final nameLower = name.toLowerCase();
+                          if (nameLower.contains('scan') || nameLower.contains('barcode') || nameLower.contains('powerscan')) {
+                            deviceIcon = Icons.document_scanner;
+                          } else if (type == 'Keyboard') {
+                            deviceIcon = Icons.keyboard;
+                          } else if (type == 'Scanner') {
+                            deviceIcon = Icons.document_scanner;
+                          } else if (type == 'Mouse') {
+                            deviceIcon = Icons.mouse;
+                          } else if (type == 'Audio') {
+                            deviceIcon = Icons.headphones;
+                          } else {
+                            deviceIcon = Icons.bluetooth;
+                          }
+                          
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  deviceIcon,
+                                  size: 20,
+                                  color: isConnected ? Colors.green.shade700 : Colors.grey.shade500,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.black87,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            width: 8,
+                                            height: 8,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: isConnected ? Colors.green : Colors.grey,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (type.isNotEmpty)
+                                        Text(
+                                          '$type • ${isConnected ? l10n.connected : l10n.disconnected}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                 ],
               ),
             ),
