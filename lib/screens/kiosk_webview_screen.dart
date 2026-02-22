@@ -73,6 +73,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   Timer? _networkCheckTimer; // Timer for periodic network status checks
   bool _isCheckingWebsite = false; // Prevent overlapping website status checks
   bool _isResettingInternet = false; // Track if internet reset is in progress
+  int _lastReportedProgress = 0; // Track last progress to throttle updates
+  SharedPreferences? _cachedPrefs; // Cached SharedPreferences instance
+  Timer? _keyboardPositionSaveTimer; // Debounce timer for keyboard position save
+  Timer? _minimizedIconPositionSaveTimer; // Debounce timer for minimized icon position save
 
   @override
   void didChangeDependencies() {
@@ -282,6 +286,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   Future<void> _loadCustomSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      _cachedPrefs = prefs; // Cache for future use
       if (mounted) {
         setState(() {
           _customAppName = prefs.getString('custom_app_name') ?? '';
@@ -421,32 +426,40 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   Future<void> _saveKeyboardPosition() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_isExpandedMode) {
-        await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
-        await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
-      } else {
-        await prefs.setDouble('numeric_keyboard_position_x', _keyboardPosition.dx);
-        await prefs.setDouble('numeric_keyboard_position_y', _keyboardPosition.dy);
+    // Debounce: cancel previous timer and start new one
+    _keyboardPositionSaveTimer?.cancel();
+    _keyboardPositionSaveTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final prefs = _cachedPrefs ?? await SharedPreferences.getInstance();
+        if (_isExpandedMode) {
+          await prefs.setDouble('keyboard_position_x', _keyboardPosition.dx);
+          await prefs.setDouble('keyboard_position_y', _keyboardPosition.dy);
+        } else {
+          await prefs.setDouble('numeric_keyboard_position_x', _keyboardPosition.dx);
+          await prefs.setDouble('numeric_keyboard_position_y', _keyboardPosition.dy);
+        }
+      } catch (error, stackTrace) {
+        log('Error saving keyboard position: $error');
+        log('Stack trace: $stackTrace');
+        // Non-critical - silently fail
       }
-    } catch (error, stackTrace) {
-      log('Error saving keyboard position: $error');
-      log('Stack trace: $stackTrace');
-      // Non-critical - silently fail
-    }
+    });
   }
 
   Future<void> _saveMinimizedIconPosition() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble('minimized_icon_position_x', _minimizedIconPosition.dx);
-      await prefs.setDouble('minimized_icon_position_y', _minimizedIconPosition.dy);
-    } catch (error, stackTrace) {
-      log('Error saving minimized icon position: $error');
-      log('Stack trace: $stackTrace');
-      // Non-critical - silently fail
-    }
+    // Debounce: cancel previous timer and start new one
+    _minimizedIconPositionSaveTimer?.cancel();
+    _minimizedIconPositionSaveTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final prefs = _cachedPrefs ?? await SharedPreferences.getInstance();
+        await prefs.setDouble('minimized_icon_position_x', _minimizedIconPosition.dx);
+        await prefs.setDouble('minimized_icon_position_y', _minimizedIconPosition.dy);
+      } catch (error, stackTrace) {
+        log('Error saving minimized icon position: $error');
+        log('Stack trace: $stackTrace');
+        // Non-critical - silently fail
+      }
+    });
   }
 
   Future<void> _saveWarningSoundSetting(bool enabled) async {
@@ -666,6 +679,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             // Only set loading for actual URL, not blank page
             if (!url.contains('data:text/html') && url != 'about:blank') {
               if (!mounted) return;
+              _lastReportedProgress = 0; // Reset progress tracker
               setState(() {
                 _isLoading = true;
                 _currentUrl = url;
@@ -675,9 +689,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           },
           onProgress: (int progress) {
             if (!mounted) return;
-            setState(() {
-              _loadingProgress = progress / 100;
-            });
+            // Throttle: only update UI every 10% change to reduce rebuilds
+            final progressPercent = (progress / 10).floor() * 10;
+            if (progressPercent != _lastReportedProgress || progress == 100) {
+              _lastReportedProgress = progressPercent;
+              setState(() {
+                _loadingProgress = progress / 100;
+              });
+            }
           },
           onWebResourceError: (WebResourceError error) {
             log('WebView error: ${error.description} (isForMainFrame: ${error.isForMainFrame})');
@@ -2037,8 +2056,8 @@ Widget _buildSavedNetworkItem(dynamic network) {
     // Cancel any existing timer
     _networkCheckTimer?.cancel();
     
-    // Start a periodic timer to check network status every 1 second
-    _networkCheckTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    // Start a periodic timer to check network status every 3 seconds (reduced from 1 for performance)
+    _networkCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
       if (mounted && _hasError) {
         // Update WiFi info
         _fetchWifiInfo();
