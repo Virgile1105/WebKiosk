@@ -1907,6 +1907,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
           onSettingsChanged: (useCustomKeyboard, disableCopyPaste, enableWarningSound) async {
             // Save old values before updating
             final oldDisableCopyPaste = _disableCopyPasteRuntime;
+            final oldUseCustomKeyboard = _useCustomKeyboardRuntime;
             
             setState(() {
               _useCustomKeyboardRuntime = useCustomKeyboard;
@@ -1916,6 +1917,17 @@ Widget _buildSavedNetworkItem(dynamic network) {
                 _showCustomKeyboard = false;
               }
             });
+            
+            // Handle keyboard mode change
+            if (useCustomKeyboard != oldUseCustomKeyboard) {
+              if (useCustomKeyboard) {
+                // Custom keyboard enabled - block system keyboard
+                await _disableSystemKeyboards();
+              } else {
+                // Custom keyboard disabled - restore system keyboard
+                await _enableSystemKeyboards();
+              }
+            }
             
             // Save all settings to shortcut
             await _saveCustomKeyboardSetting(useCustomKeyboard);
