@@ -370,39 +370,12 @@ class MainActivity : FlutterActivity() {
                         result.error("ENABLE_OWNER_ERROR", e.message, null)
                     }
                 }
-                "disableSystemKeyboards" -> {
-                    try {
-                        val success = disableSystemKeyboards()
-                        result.success(success)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error disabling system keyboards", e)
-                        result.error("KEYBOARD_ERROR", e.message, null)
-                    }
-                }
-                "enableSystemKeyboards" -> {
-                    try {
-                        val success = enableSystemKeyboards()
-                        result.success(success)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error enabling system keyboards", e)
-                        result.error("KEYBOARD_ERROR", e.message, null)
-                    }
-                }
                 "hideImeAggressively" -> {
                     try {
                         hideImeAggressively()
                         result.success(null)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error hiding IME aggressively", e)
-                        result.error("IME_ERROR", e.message, null)
-                    }
-                }
-                "forceHideKeyboard" -> {
-                    try {
-                        forceHideKeyboard()
-                        result.success(null)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error force hiding keyboard", e)
                         result.error("IME_ERROR", e.message, null)
                     }
                 }
@@ -1523,68 +1496,6 @@ class MainActivity : FlutterActivity() {
     }
     
     /**
-     * Disables system soft keyboards but allows hardware input devices.
-     * Note: We don't restrict permitted IMEs anymore (since we removed EmptyKeyboardService).
-     * Instead, we rely on hideImeAggressively() to block soft keyboards with window flags
-     * while detecting and allowing hardware scanners.
-     * Only works when app is device owner.
-     */
-    private fun disableSystemKeyboards(): Boolean {
-        initDevicePolicyManager()
-        
-        if (!isDeviceOwner()) {
-            Log.w(TAG, "Not a device owner, cannot manage keyboards")
-            return false
-        }
-        
-        try {
-            // Get input method service to find all IMEs
-            val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            val enabledImes = inputMethodManager.enabledInputMethodList
-            
-            // Save current IMEs for reference
-            val imeIds = enabledImes.map { it.id }
-            val prefs = getSharedPreferences("DeviceGatePrefs", Context.MODE_PRIVATE)
-            prefs.edit().putStringSet("savedSystemKeyboards", imeIds.toSet()).apply()
-            
-            Log.d(TAG, "Found ${imeIds.size} system keyboards: $imeIds")
-            
-            // We no longer restrict permitted IMEs since we removed EmptyKeyboardService
-            // Instead, hideImeAggressively() handles blocking soft keyboards while allowing
-            // hardware input devices (scanners) to work
-            Log.d(TAG, "Keyboard management delegated to hideImeAggressively() for smart blocking")
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in disableSystemKeyboards", e)
-            return false
-        }
-    }
-    
-    /**
-     * Re-enables system keyboards.
-     * Called when custom keyboard is disabled or app exits.
-     */
-    private fun enableSystemKeyboards(): Boolean {
-        initDevicePolicyManager()
-        
-        if (!isDeviceOwner()) {
-            Log.w(TAG, "Not a device owner, cannot enable system keyboards")
-            return false
-        }
-        
-        try {
-            // Set permitted input methods to null (allows all keyboards)
-            devicePolicyManager?.setPermittedInputMethods(adminComponent!!, null)
-            
-            Log.d(TAG, "System keyboards enabled successfully")
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error enabling system keyboards", e)
-            return false
-        }
-    }
-
-    /**
      * Aggressively hides the system keyboard IME bar from appearing (even on focus)
      * BUT allows hardware input devices like barcode scanners to work
      * Strategy: If a physical keyboard/scanner is connected via Bluetooth,
@@ -1752,56 +1663,6 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "IME restored to default behavior, aggressive flags removed")
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring IME default", e)
-        }
-    }
-
-    /**
-     * Force hides any active keyboard and resets IME connection state.
-     * This works even without device owner by directly manipulating the InputMethodManager.
-     */
-    private fun forceHideKeyboard() {
-        try {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            
-            // Hide soft input from window token
-            window?.decorView?.windowToken?.let { token ->
-                imm.hideSoftInputFromWindow(token, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
-                Log.d(TAG, "Force hid keyboard via hideSoftInputFromWindow")
-            }
-            
-            // Also try hiding from current focus
-            currentFocus?.windowToken?.let { token ->
-                imm.hideSoftInputFromWindow(token, 0)
-                Log.d(TAG, "Force hid keyboard from current focus")
-            }
-            
-            // Restart input to clear any stale IME connections
-            try {
-                val restartInputMethod = imm.javaClass.getMethod("restartInput", android.view.View::class.java)
-                currentFocus?.let { view ->
-                    restartInputMethod.invoke(imm, view)
-                    Log.d(TAG, "Restarted input connection")
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "Could not restart input: ${e.message}")
-            }
-            
-            // Clear any active input connection
-            try {
-                val isActiveMethod = imm.javaClass.getMethod("isActive")
-                val isActive = isActiveMethod.invoke(imm) as Boolean
-                if (isActive) {
-                    val finishMethod = imm.javaClass.getMethod("finishInput")
-                    finishMethod.invoke(imm)
-                    Log.d(TAG, "Finished active input connection")
-                }
-            } catch (e: Exception) {
-                Log.d(TAG, "Could not finish input: ${e.message}")
-            }
-            
-            Log.d(TAG, "Force keyboard hide completed")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error force hiding keyboard", e)
         }
     }
 

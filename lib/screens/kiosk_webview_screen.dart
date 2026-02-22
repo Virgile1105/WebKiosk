@@ -237,35 +237,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
     }
   }
   
-  /// Aggressively resets keyboard state multiple times on initialization
-  /// This ensures the keyboard settings stick even after native keyboard was used
+  /// Resets keyboard state on initialization
   void _startAggressiveKeyboardReset() {
-    // Reset immediately
     _disableSystemKeyboards();
-    
-    // Reset again after 500ms (after webview starts loading)
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted && _useCustomKeyboardRuntime) {
-        log('Aggressive keyboard reset: 500ms delay');
-        _disableSystemKeyboards();
-      }
-    });
-    
-    // Reset again after 1500ms (after page might have loaded)
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted && _useCustomKeyboardRuntime) {
-        log('Aggressive keyboard reset: 1500ms delay');
-        _disableSystemKeyboards();
-      }
-    });
-    
-    // Reset again after 3000ms (final safety net)
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (mounted && _useCustomKeyboardRuntime) {
-        log('Aggressive keyboard reset: 3000ms delay - final');
-        _disableSystemKeyboards();
-      }
-    });
   }
   
   @override
@@ -285,22 +259,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
     }
   }
   
-  /// Disables system keyboards at device owner level (cleaner than JavaScript workarounds)
+  /// Disables system keyboards by hiding IME at window level
   Future<void> _disableSystemKeyboards() async {
     try {
-      // First, force hide any currently active keyboard
-      await platform.invokeMethod('forceHideKeyboard');
-      log('Force hid any active keyboards');
-      
-      // Then, disable all system keyboards at device level (if device owner)
-      final result = await platform.invokeMethod('disableSystemKeyboards');
-      if (result == true) {
-        log('System keyboards disabled successfully via device owner');
-      } else {
-        log('Failed to disable system keyboards (not device owner?)');
-      }
-      
-      // Finally, aggressively hide IME at window level
       await platform.invokeMethod('hideImeAggressively');
       log('IME hidden aggressively at window level');
     } catch (e) {
@@ -311,15 +272,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   /// Re-enables system keyboards
   Future<void> _enableSystemKeyboards() async {
     try {
-      // First, restore IME default behavior
       await platform.invokeMethod('restoreImeDefault');
       log('IME behavior restored to default');
-      
-      // Then, re-enable system keyboards at device level
-      final result = await platform.invokeMethod('enableSystemKeyboards');
-      if (result == true) {
-        log('System keyboards enabled successfully');
-      }
     } catch (e) {
       log('Error enabling system keyboards: $e');
     }
@@ -705,15 +659,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               // Set up custom keyboard after page loads
               if (_useCustomKeyboardRuntime) {
                 _setupCustomKeyboard();
-                
-                // Re-disable system keyboards after custom keyboard setup
-                // This ensures no native keyboard interference after page load
-                Future.delayed(const Duration(milliseconds: 200), () {
-                  if (mounted && _useCustomKeyboardRuntime) {
-                    log('Re-disabling system keyboards after page load');
-                    _disableSystemKeyboards();
-                  }
-                });
               }
             }
           },
@@ -880,8 +825,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
     }
   }
 
-  /// Disables copy, paste, and cut operations on input fields
   /// Sets up custom keyboard functionality
+  /// Note: IME blocking is now handled by hideImeAggressively() at the Android window level
   void _setupCustomKeyboard() {
     log('Setting up custom keyboard for URL: ${widget.initialUrl}');
     _controller.runJavaScript('''
@@ -894,74 +839,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         window.customKeyboardSetup = true;
 
         ${_disableCopyPasteRuntime ? '''
-        // ===== COPY/PASTE BLOCKING - DEFINED FIRST =====
-        // Function to disable copy/paste on an element
-        function disableCopyPaste(element) {
-          if (!element || element.hasAttribute('data-copy-paste-disabled')) {
-            return;
-          }
-          element.setAttribute('data-copy-paste-disabled', 'true');
-          
-          // Prevent copy/paste/cut events
-          element.addEventListener('copy', function(e) {
+        // ===== COPY/PASTE BLOCKING (Global listeners only - capture phase) =====
+        ['copy', 'paste', 'cut'].forEach(function(evt) {
+          document.addEventListener(evt, function(e) {
             e.preventDefault();
             e.stopPropagation();
             return false;
           }, true);
-          
-          element.addEventListener('paste', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          }, true);
-          
-          element.addEventListener('cut', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          }, true);
-          
-          // Block keyboard shortcuts for copy/paste
-          element.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
-              e.preventDefault();
-              e.stopPropagation();
-              return false;
-            }
-          }, true);
-          
-          // Prevent context menu (right-click)
-          element.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          }, true);
-          
-          // Apply CSS to prevent text selection
-          element.style.userSelect = 'none';
-          element.style.webkitUserSelect = 'none';
-          element.style.mozUserSelect = 'none';
-          element.style.msUserSelect = 'none';
-        }
-        
-        // Global event listeners to catch all copy/paste attempts
-        document.addEventListener('copy', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
-        
-        document.addEventListener('paste', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
-        
-        document.addEventListener('cut', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }, true);
+        });
         
         document.addEventListener('contextmenu', function(e) {
           if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.contentEditable === 'true') {
@@ -971,85 +856,51 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           }
         }, true);
         
-        // Block keyboard shortcuts globally
         document.addEventListener('keydown', function(e) {
-          if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'v' || e.key === 'x' || e.key === 'a')) {
+          if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x', 'a'].includes(e.key)) {
             e.preventDefault();
             e.stopPropagation();
             return false;
           }
         }, true);
+        
+        // Global CSS to prevent text selection
+        if (!document.querySelector('style[data-copy-paste-disabled]')) {
+          const cpStyle = document.createElement('style');
+          cpStyle.setAttribute('data-copy-paste-disabled', 'true');
+          cpStyle.textContent = '* { user-select: none !important; -webkit-user-select: none !important; } input, textarea, [contenteditable="true"] { user-select: text !important; -webkit-user-select: text !important; }';
+          document.head.appendChild(cpStyle);
+        }
         // ===== END COPY/PASTE BLOCKING =====
         ''' : ''}
 
-        // Add CSS to ensure cursor is visible and prevent IME
+        // Add CSS to ensure cursor is visible
         if (!document.querySelector('style[data-custom-keyboard]')) {
           const style = document.createElement('style');
           style.setAttribute('data-custom-keyboard', 'true');
-          const cssText = 'input:focus, textarea:focus, select:focus, [contenteditable]:focus { caret-color: black !important; ime-mode: disabled !important; -webkit-ime-mode: disabled !important; -webkit-user-modify: read-write-plaintext-only !important; -webkit-touch-callout: none !important; -webkit-user-select: text !important; -webkit-tap-highlight-color: transparent !important; -webkit-appearance: none !important; pointer-events: auto !important; } input, textarea, select, [contenteditable] { ime-mode: disabled; -webkit-ime-mode: disabled; -webkit-user-modify: read-write-plaintext-only; -webkit-touch-callout: none; -webkit-user-select: text; -webkit-tap-highlight-color: transparent; -webkit-appearance: none; }';
-          style.textContent = cssText;
+          style.textContent = 'input:focus, textarea:focus, select:focus, [contenteditable]:focus { caret-color: black !important; }';
           document.head.appendChild(style);
         }
-        document.querySelectorAll('input, textarea, [contenteditable]').forEach(function(el) {
-          if (!el.hasAttribute('data-inputmode-set')) {
-            el.setAttribute('inputmode', 'none');
-            el.setAttribute('data-inputmode-set', 'true');
-          }
-        });
 
         // Set up input listeners (only if not already set up)
         if (!window.inputListenersSetup) {
           window.inputListenersSetup = true;
 
-          function setupInputListeners() {
-            const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
-            inputs.forEach(function(input) {
-              if (!input.hasAttribute('data-custom-keyboard')) {
-                input.setAttribute('data-custom-keyboard', 'true');
-                ${_disableCopyPasteRuntime ? 'disableCopyPaste(input);' : ''}
-                input.addEventListener('focus', function(e) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  
-                  var target = e.target;
-                  
-                  // Set inputmode to none immediately
-                  target.setAttribute('inputmode', 'none');
-                  
-                  if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
-                    // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
-                    target.focus();
-                    showCustomKeyboard.postMessage('show');
-                  } else {
-                    // Aggressive IME prevention strategy for other fields
-                    // Temporarily make readonly to prevent IME
-                    target.setAttribute('readonly', 'true');
-                    
-                    // Force blur and refocus to reset IME state
-                    setTimeout(function() {
-                      target.removeAttribute('readonly');
-                      target.focus();
-                      
-                      // Add one-time listeners to prevent IME reactivation
-                      function preventIMEReactivation(te) {
-                        te.preventDefault();
-                        te.stopPropagation();
-                        target.removeEventListener('touchstart', preventIMEReactivation);
-                        target.removeEventListener('mousedown', preventIMEReactivation);
-                      }
-                      target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                      target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                    }, 10);
-                    
-                    showCustomKeyboard.postMessage('show');
-                  }
-                  return false;
-                });
-                input.addEventListener('blur', function(e) {
-                  hideCustomKeyboard.postMessage('hide');
-                });
-              }
+          function setupInputElement(input) {
+            if (input.hasAttribute('data-custom-keyboard')) return;
+            input.setAttribute('data-custom-keyboard', 'true');
+            
+            input.addEventListener('focus', function() {
+              showCustomKeyboard.postMessage('show');
             });
+            input.addEventListener('blur', function() {
+              hideCustomKeyboard.postMessage('hide');
+            });
+          }
+
+          function setupInputListeners() {
+            const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable="true"], [role="textbox"], [role="combobox"], [role="searchbox"], select');
+            inputs.forEach(setupInputElement);
           }
 
           // Initial setup
@@ -1062,7 +913,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                  document.activeElement.tagName === 'TEXTAREA' || 
                  document.activeElement.contentEditable === 'true' ||
                  document.activeElement.getAttribute('role') === 'textbox')) {
-              console.log('Custom keyboard: Field already focused on page load, showing keyboard');
               showCustomKeyboard.postMessage('show');
             }
           }, 100);
@@ -1072,130 +922,22 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             mutations.forEach(function(mutation) {
               mutation.addedNodes.forEach(function(node) {
                 if (node.nodeType === 1) {
-                  if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
-                    // Skip button inputs
-                    if (node.tagName === 'INPUT' && (node.type === 'button' || node.type === 'submit' || node.type === 'reset')) {
-                      return;
-                    }
-                    if (!node.hasAttribute('data-custom-keyboard')) {
-                      node.setAttribute('data-custom-keyboard', 'true');
-                      node.setAttribute('inputmode', 'none');
-                      ${_disableCopyPasteRuntime ? 'disableCopyPaste(node);' : ''}
-                      node.addEventListener('focus', function(e) {
-                        console.log('Custom keyboard: Input field focused');
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        var target = e.target;
-                        
-                        // Set inputmode to none immediately
-                        target.setAttribute('inputmode', 'none');
-                        
-                        if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
-                          // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
-                          target.focus();
-                          showCustomKeyboard.postMessage('show');
-                        } else {
-                          // Aggressive IME prevention strategy for other fields
-                          // Temporarily make readonly to prevent IME
-                          target.setAttribute('readonly', 'true');
-                          
-                          // Force blur and refocus to reset IME state
-                          setTimeout(function() {
-                            target.removeAttribute('readonly');
-                            target.focus();
-                            
-                            // Add one-time listeners to prevent IME reactivation
-                            function preventIMEReactivation(te) {
-                              te.preventDefault();
-                              te.stopPropagation();
-                              target.removeEventListener('touchstart', preventIMEReactivation);
-                              target.removeEventListener('mousedown', preventIMEReactivation);
-                            }
-                            target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                            target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                          }, 10);
-                          
-                          console.log('Sending show message to custom keyboard');
-                          console.log('showCustomKeyboard object:', showCustomKeyboard);
-                          console.log('window.showCustomKeyboard:', window.showCustomKeyboard);
-                          showCustomKeyboard.postMessage('show');
-                        }
-                        return false;
-                      });
-                      node.addEventListener('blur', function(e) {
-                        hideCustomKeyboard.postMessage('hide');
-                      });
-                    }
-                  } else {
-                    const inputs = node.querySelectorAll('input, textarea, [contenteditable]');
-                    inputs.forEach(function(input) {
-                      if (!input.hasAttribute('data-custom-keyboard')) {
-                        input.setAttribute('data-custom-keyboard', 'true');
-                        input.setAttribute('inputmode', 'none');
-                        ${_disableCopyPasteRuntime ? 'disableCopyPaste(input);' : ''}
-                        input.addEventListener('focus', function(e) {
-                          console.log('Custom keyboard: Input field focused');
-                          e.preventDefault();
-                          e.stopPropagation();
-                          
-                          var target = e.target;
-                          
-                          // Set inputmode to none immediately
-                          target.setAttribute('inputmode', 'none');
-                          
-                          if (target.type === 'password' || (target.name === 'sap-user' || target.id === 'sap-user')) {
-                            // For password fields, ensure focus and show keyboard without readonly trick to avoid conflicts
-                            target.focus();
-                            showCustomKeyboard.postMessage('show');
-                          } else {
-                            // Aggressive IME prevention strategy for other fields
-                            // Temporarily make readonly to prevent IME
-                            target.setAttribute('readonly', 'true');
-                            
-                            // Force blur and refocus to reset IME state
-                            setTimeout(function() {
-                              target.removeAttribute('readonly');
-                              target.focus();
-                              
-                              // Add one-time listeners to prevent IME reactivation
-                              function preventIMEReactivation(te) {
-                                te.preventDefault();
-                                te.stopPropagation();
-                                target.removeEventListener('touchstart', preventIMEReactivation);
-                                target.removeEventListener('mousedown', preventIMEReactivation);
-                              }
-                              target.addEventListener('touchstart', preventIMEReactivation, { once: true });
-                              target.addEventListener('mousedown', preventIMEReactivation, { once: true });
-                            }, 10);
-                            
-                            showCustomKeyboard.postMessage('show');
-                          }
-                          return false;
-                        });
-                        input.addEventListener('blur', function(e) {
-                          hideCustomKeyboard.postMessage('hide');
-                        });
-                      }
-                    });
-                    if (inputs.length > 0) {
-                      // No need to call setupInputListeners again since we handled them above
-                    }
+                  // Check if node itself is an input
+                  if ((node.tagName === 'INPUT' && !['button', 'submit', 'reset'].includes(node.type)) ||
+                      node.tagName === 'TEXTAREA' || 
+                      node.tagName === 'SELECT' ||
+                      node.contentEditable === 'true' || 
+                      ['textbox', 'combobox', 'searchbox'].includes(node.getAttribute('role'))) {
+                    setupInputElement(node);
                   }
+                  // Also check children
+                  node.querySelectorAll && node.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable="true"], select').forEach(setupInputElement);
                 }
               });
             });
           });
 
-          observer.observe(document.body, {
-            childList: true,
-            subtree: true
-          });
-
-          // Global focus listener for debugging
-          document.addEventListener('focus', function(e) {
-            console.log('Global focus event on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
-          }, true);
+          observer.observe(document.body, { childList: true, subtree: true });
 
           // Handle iframes
           document.querySelectorAll('iframe').forEach(function(iframe) {
@@ -1204,43 +946,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               if (doc) {
                 var script = doc.createElement('script');
                 script.textContent = \`
-                  function setupInputListeners() {
-                    const inputs = document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable], [role="textbox"], [contenteditable="true"], [role="combobox"], [role="searchbox"], [role="spinbutton"], [role="slider"], [role="listbox"], select');
-                    console.log('Found ' + inputs.length + ' input elements in iframe');
-                    inputs.forEach(function(input) {
-                      if (!input.hasAttribute('data-custom-keyboard')) {
-                        input.setAttribute('data-custom-keyboard', 'true');
-                        input.setAttribute('inputmode', 'none');
-                        input.addEventListener('focus', function(e) {
-                          console.log('Custom keyboard: Input field focused in iframe');
-                          e.preventDefault();
-                          e.stopPropagation();
-                          var target = e.target;
-                          target.setAttribute('inputmode', 'none');
-                          target.setAttribute('readonly', 'true');
-                          setTimeout(function() {
-                            target.removeAttribute('readonly');
-                            target.focus();
-                            console.log('Sending show message from iframe');
-                            window.parent.postMessage('showCustomKeyboard', '*');
-                          }, 10);
-                        });
-                        input.addEventListener('blur', function(e) {
-                          window.parent.postMessage('hideCustomKeyboard', '*');
-                        });
-                      }
+                  function setupInputElement(input) {
+                    if (input.hasAttribute('data-custom-keyboard')) return;
+                    input.setAttribute('data-custom-keyboard', 'true');
+                    input.addEventListener('focus', function() {
+                      window.parent.postMessage('showCustomKeyboard', '*');
                     });
+                    input.addEventListener('blur', function() {
+                      window.parent.postMessage('hideCustomKeyboard', '*');
+                    });
+                  }
+                  
+                  function setupInputListeners() {
+                    document.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable="true"], select').forEach(setupInputElement);
                   }
                   setupInputListeners();
                   
-                  // Check if an input field already has focus in iframe
                   setTimeout(function() {
                     if (document.activeElement && 
                         (document.activeElement.tagName === 'INPUT' || 
                          document.activeElement.tagName === 'TEXTAREA' || 
-                         document.activeElement.contentEditable === 'true' ||
-                         document.activeElement.getAttribute('role') === 'textbox')) {
-                      console.log('Custom keyboard: Field already focused in iframe, showing keyboard');
+                         document.activeElement.contentEditable === 'true')) {
                       window.parent.postMessage('showCustomKeyboard', '*');
                     }
                   }, 100);
@@ -1249,66 +975,16 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                     mutations.forEach(function(mutation) {
                       mutation.addedNodes.forEach(function(node) {
                         if (node.nodeType === 1) {
-                          if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.contentEditable === 'true' || node.getAttribute('role') === 'textbox' || node.getAttribute('role') === 'combobox' || node.getAttribute('role') === 'searchbox' || node.getAttribute('role') === 'spinbutton' || node.getAttribute('role') === 'slider' || node.getAttribute('role') === 'listbox' || node.tagName === 'SELECT') {
-                            // Skip button inputs
-                            if (node.tagName === 'INPUT' && (node.type === 'button' || node.type === 'submit' || node.type === 'reset')) {
-                              return;
-                            }
-                            if (!node.hasAttribute('data-custom-keyboard')) {
-                              node.setAttribute('data-custom-keyboard', 'true');
-                              node.setAttribute('inputmode', 'none');
-                              node.addEventListener('focus', function(e) {
-                                console.log('Custom keyboard: Input field focused in iframe');
-                                e.preventDefault();
-                                e.stopPropagation();
-                                var target = e.target;
-                                target.setAttribute('inputmode', 'none');
-                                target.setAttribute('readonly', 'true');
-                                setTimeout(function() {
-                                  target.removeAttribute('readonly');
-                                  target.focus();
-                                  console.log('Sending show message from iframe');
-                                  window.parent.postMessage('showCustomKeyboard', '*');
-                                }, 10);
-                              });
-                              node.addEventListener('blur', function(e) {
-                                window.parent.postMessage('hideCustomKeyboard', '*');
-                              });
-                            }
+                          if ((node.tagName === 'INPUT' && !['button', 'submit', 'reset'].includes(node.type)) ||
+                              node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.contentEditable === 'true') {
+                            setupInputElement(node);
                           }
-                          const inputs = node.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable]');
-                          inputs.forEach(function(input) {
-                            if (!input.hasAttribute('data-custom-keyboard')) {
-                              input.setAttribute('data-custom-keyboard', 'true');
-                              input.setAttribute('inputmode', 'none');
-                              input.addEventListener('focus', function(e) {
-                                console.log('Custom keyboard: Input field focused in iframe');
-                                e.preventDefault();
-                                e.stopPropagation();
-                                var target = e.target;
-                                target.setAttribute('inputmode', 'none');
-                                target.setAttribute('readonly', 'true');
-                                setTimeout(function() {
-                                  target.removeAttribute('readonly');
-                                  target.focus();
-                                  console.log('Sending show message from iframe');
-                                  window.parent.postMessage('showCustomKeyboard', '*');
-                                }, 10);
-                              });
-                              input.addEventListener('blur', function(e) {
-                                window.parent.postMessage('hideCustomKeyboard', '*');
-                              });
-                            }
-                          });
+                          node.querySelectorAll && node.querySelectorAll('input:not([type="button"]):not([type="submit"]):not([type="reset"]), textarea, [contenteditable="true"], select').forEach(setupInputElement);
                         }
                       });
                     });
                   });
-                  observer.observe(doc.body, { childList: true, subtree: true });
-                  doc.addEventListener('focus', function(e) {
-                    console.log('Global focus event in iframe on:', e.target.tagName, e.target.type, e.target.contentEditable, e.target.getAttribute('role'));
-                    window.parent.postMessage('debugLog:' + 'Global focus event in iframe on: ' + e.target.tagName + ' ' + e.target.type + ' ' + e.target.contentEditable + ' ' + e.target.getAttribute('role'), '*');
-                  }, true);
+                  observer.observe(document.body, { childList: true, subtree: true });
                 \`;
                 doc.head.appendChild(script);
               }
@@ -1320,63 +996,47 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           // Listen for messages from iframes
           window.addEventListener('message', function(e) {
             if (e.data === 'showCustomKeyboard') {
-              console.log('Received show from iframe');
               showCustomKeyboard.postMessage('show');
             } else if (e.data === 'hideCustomKeyboard') {
-              console.log('Received hide from iframe');
               hideCustomKeyboard.postMessage('hide');
             } else if (typeof e.data === 'string' && e.data.startsWith('debugLog:')) {
               debugLog.postMessage(e.data.substring(9));
             }
           });
-
-          // No need to blur or remove autofocus here, handled separately
         }
 
-        // Add focusin listener to blur fields with MobileEditDisabled class
+        // Handle MobileEditDisabled fields (SAP specific)
         document.addEventListener('focusin', function(e) {
           if (e.target.classList.contains('MobileEditDisabled')) {
             e.target.blur();
           }
         });
-
-        // Immediately disable any MobileEditDisabled fields to prevent focus
         document.querySelectorAll('.MobileEditDisabled').forEach(function(el) {
           el.disabled = true;
         });
 
-        // Check first input field once on page load for warning or error messages
-        // SAP displays messages immediately when page loads - no need to listen for changes
-        // Skip hidden inputs to find the actual visible error/warning message field
+        // Check first input field for warning or error messages (SAP specific)
         const firstInput = document.querySelector('input:not([type="hidden"]), textarea, select');
-        if (firstInput) {1
-
-          // For readonly/disabled fields, .value property may return empty string
-          // Use getAttribute('value') as fallback to get the actual HTML attribute value
+        if (firstInput) {
           let value = firstInput.value || firstInput.getAttribute('value') || '';
           
-          // Decode HTML entities (e.g., &nbsp; to space)
+          // Decode HTML entities
           const textarea = document.createElement('textarea');
           textarea.innerHTML = value;
           value = textarea.value;
                    
           if (value) {
-            // Check for warning message
             if (value === "Le UM scanné provient d'un autre transport" || value.includes("transport")) {
-              firstInput.blur(); // Remove focus from the warning field
+              firstInput.blur();
               playWarningSound.postMessage('Warning value detected');              
-            }
-            // Check for error message
-            // Use includes() for more flexible matching (handles &nbsp; and other variations)
-            else if (value.includes("Erreur")) {
-              firstInput.blur(); // Remove focus from the error field
+            } else if (value.includes("Erreur")) {
+              firstInput.blur();
               playErrorSound.postMessage('Error value detected: ' + value);              
             }
           }
         }
 
         console.log('Custom keyboard JavaScript injected');
-        // Flag is now set earlier after basic setup
       })();
     ''');
   }
