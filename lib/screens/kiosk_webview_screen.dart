@@ -1095,14 +1095,20 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             controller: _controller,
           ),
           
-          // Loading overlay to hide previous content
-          if (_isLoading)
-            Container(
-              color: Colors.white,
-              child: const Center(
-                child: CircularProgressIndicator(),
+          // Loading overlay with fade animation to prevent flickering
+          AnimatedOpacity(
+            opacity: _isLoading ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 200),
+            child: IgnorePointer(
+              ignoring: !_isLoading,
+              child: Container(
+                color: Colors.white,
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
               ),
             ),
+          ),
           
           // Error overlay
           if (_hasError)
@@ -1455,18 +1461,21 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               ),
             ),
           
-          // Loading indicator
-          if (_isLoading)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
+          // Loading indicator with fade animation
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: AnimatedOpacity(
+              opacity: _isLoading ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
               child: LinearProgressIndicator(
                 value: _loadingProgress,
                 backgroundColor: Colors.grey.shade200,
                 valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
               ),
             ),
+          ),
 
           // Custom keyboard
           if (_showCustomKeyboard && _useCustomKeyboardRuntime) ...[
