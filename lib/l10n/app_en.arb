@@ -364,5 +364,39 @@
   "unknownError": "Unknown error",
   "unknownUrl": "Unknown URL",
   "statusFormat": "Status: {status}",
-  "checking": "Checking..."
+  "checking": "Checking...",
+  "appUpdate": "App Update",
+  "updateAvailable": "Update Available",
+  "upToDate": "Up to date",
+  "checkingForUpdate": "Checking for updates...",
+  "downloadingUpdate": "Downloading update...",
+  "newVersionAvailable": "New version {version} available",
+  "@newVersionAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "currentVersion": "Current version: {version}",
+  "@currentVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "update": "Update",
+  "updateConfirmation": "Do you want to update from version {current} to {latest}?",
+  "@updateConfirmation": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "latest": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFailed": "Update failed"
 }

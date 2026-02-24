@@ -16,11 +16,52 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
   
   bool _isLoading = true;
   bool _isDeviceOwner = false;
+  
+  // Update state
+  bool _isCheckingUpdate = false;
+  bool _isDownloading = false;
+  bool _hasUpdate = false;
+  String _currentVersion = '';
+  String _latestVersion = '';
+  String _downloadUrl = '';
+  String? _updateError;
 
   @override
   void initState() {
     super.initState();
     _loadDeviceOwnerStatus();
+    _checkForUpdate();
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_isCheckingUpdate) return;
+    
+    setState(() {
+      _isCheckingUpdate = true;
+      _updateError = null;
+    });
+    
+    try {
+      final result = await platform.invokeMethod<Map>('checkForUpdate');
+      if (mounted && result != null) {
+        setState(() {
+          _hasUpdate = result['hasUpdate'] == true;
+          _currentVersion = result['currentVersion']?.toString() ?? '';
+          _latestVersion = result['latestVersion']?.toString() ?? '';
+          _downloadUrl = result['downloadUrl']?.toString() ?? '';
+          _updateError = result['error']?.toString();
+          _isCheckingUpdate = false;
+        });
+      }
+    } catch (e) {
+      logger.log('Error checking for update: $e');
+      if (mounted) {
+        setState(() {
+          _isCheckingUpdate = false;
+          _updateError = e.toString();
+        });
+      }
+    }
   }
 
   Future<void> _loadDeviceOwnerStatus() async {
@@ -74,7 +115,7 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
         final success = await platform.invokeMethod('removeDeviceOwner');
         
         // Reload status after removal
-        await _loadStatus();
+        await _loadDeviceOwnerStatus();
         
         if (mounted) {
           if (success) {
@@ -163,6 +204,70 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
     }
   }
 
+  void _confirmAndInstallUpdate() async {
+    final l10n = AppLocalizations.of(context)!;
+    
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.updateAvailable),
+        content: Text(l10n.updateConfirmation(_currentVersion, _latestVersion)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.update, style: const TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        _isDownloading = true;
+      });
+      
+      try {
+        final success = await platform.invokeMethod<bool>(
+          'downloadAndInstallUpdate',
+          {'downloadUrl': _downloadUrl},
+        );
+        
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+          });
+          
+          if (success != true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l10n.updateFailed),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        logger.log('Error installing update: $e');
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${l10n.updateFailed}: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -177,6 +282,74 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               children: [
+                // App Update Section
+                Card(
+                  margin: const EdgeInsets.all(16),
+                  child: ListTile(
+                    leading: _isCheckingUpdate || _isDownloading
+                        ? const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          )
+                        : Icon(
+                            _hasUpdate ? Icons.system_update : Icons.check_circle,
+                            color: _hasUpdate ? Colors.orange : Colors.green,
+                            size: 32,
+                          ),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            l10n.appUpdate,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (!_isCheckingUpdate && !_isDownloading)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _hasUpdate ? Colors.orange[100] : Colors.green[100],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _hasUpdate ? l10n.updateAvailable : l10n.upToDate,
+                              style: TextStyle(
+                                color: _hasUpdate ? Colors.orange[900] : Colors.green[900],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: _isCheckingUpdate
+                        ? Text(l10n.checkingForUpdate)
+                        : _isDownloading
+                            ? Text(l10n.downloadingUpdate)
+                            : _updateError != null
+                                ? Text(_updateError!, style: const TextStyle(color: Colors.red))
+                                : Text(
+                                    _hasUpdate
+                                        ? l10n.newVersionAvailable(_latestVersion)
+                                        : l10n.currentVersion(_currentVersion),
+                                  ),
+                    trailing: _hasUpdate && !_isCheckingUpdate && !_isDownloading
+                        ? const Icon(Icons.download)
+                        : IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: _isCheckingUpdate ? null : _checkForUpdate,
+                          ),
+                    onTap: _hasUpdate && !_isCheckingUpdate && !_isDownloading
+                        ? _confirmAndInstallUpdate
+                        : null,
+                  ),
+                ),
+                
+                const Divider(height: 1),
+                
                 // Device Owner Mode Section
                 Card(
                   margin: const EdgeInsets.all(16),

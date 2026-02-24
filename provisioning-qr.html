@@ -59,6 +59,61 @@
             border-left: 4px solid #2196F3;
             margin: 20px 0;
         }
+        .instructions-container {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+        }
+        .instructions-column {
+            flex: 1;
+            max-width: 400px;
+        }
+        .instructions-column h3 {
+            margin-top: 0;
+        }
+
+        /* Print styles */
+        @media print {
+            body {
+                margin: 0;
+                padding: 10px;
+                background: white;
+            }
+            .container {
+                padding: 15px;
+                box-shadow: none;
+            }
+            h1 {
+                font-size: 24px;
+                margin: 10px 0;
+            }
+            #qrcode {
+                margin: 15px 0;
+                padding: 10px;
+            }
+            #qrcode canvas {
+                width: 300px !important;
+                height: 300px !important;
+            }
+            .instructions {
+                margin: 10px 0;
+                padding: 10px;
+                font-size: 14px;
+            }
+            .instructions ol {
+                margin: 5px 0;
+                padding-left: 20px;
+            }
+            .instructions li {
+                margin: 3px 0;
+            }
+            button, .json-display, h3:has(+ .json-display) {
+                display: none !important;
+            }
+            h3 {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -66,13 +121,26 @@
         <h1>DeviceGate Provisioning QR Code</h1>
         
         <div class="instructions">
-            <h3>Instructions:</h3>
-            <ol>
-                <li>Factory reset your device</li>
-                <li>Connect to WiFi during setup</li>
-                <li>Tap 6 times on the screen to open QR scanner</li>
-                <li>Scan this QR code displayed on this screen</li>
-            </ol>
+            <div class="instructions-container">
+                <div class="instructions-column">
+                    <h3>Instructions:</h3>
+                    <ol>
+                        <li>Factory reset your device</li>
+                        <li>Tap 6 times on the screen</li>
+                        <li>Scan this QR code displayed on this screen</li>
+                        <li>Connect to WiFi during setup</li>                
+                    </ol>
+                </div>
+                <div class="instructions-column">
+                    <h3>Instructions:</h3>
+                    <ol>
+                        <li>Réinitialisez l'appareil en mode usine</li>
+                        <li>Appuyez 6 fois sur l'écran</li>
+                        <li>Scannez ce code QR affiché sur cet écran</li>
+                        <li>Connectez-vous au WiFi</li>                
+                    </ol>
+                </div>
+            </div>
         </div>
 
         <div id="qrcode"></div>
@@ -88,7 +156,7 @@
         const provisioningData = {
             "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.devicegate.app/.MyDeviceAdminReceiver",
             "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME": "com.devicegate.app",
-            "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://github.com/Virgile1105/DeviceGate/releases/download/v1.0.1/app-release.apk",
+            "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://github.com/Virgile1105/DeviceGate/releases/download/1.0.1+11/app-release.apk",
             "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "sOh7ZF2S7ejd5MKS0-Fe7Yk63-YDjb79W1eie1YFkSg",
             "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": true,
             "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": true

@@ -364,6 +364,40 @@
   "unknownError": "Erreur inconnue",
   "unknownUrl": "URL inconnue",
   "statusFormat": "État : {status}",
-  "checking": "Vérification..."
+  "checking": "Vérification...",
+  "appUpdate": "Mise à jour",
+  "updateAvailable": "Mise à jour disponible",
+  "upToDate": "À jour",
+  "checkingForUpdate": "Vérification des mises à jour...",
+  "downloadingUpdate": "Téléchargement de la mise à jour...",
+  "newVersionAvailable": "Nouvelle version {version} disponible",
+  "@newVersionAvailable": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "currentVersion": "Version actuelle : {version}",
+  "@currentVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "update": "Mettre à jour",
+  "updateConfirmation": "Voulez-vous mettre à jour de la version {current} vers {latest} ?",
+  "@updateConfirmation": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "latest": {
+        "type": "String"
+      }
+    }
+  },
+  "updateFailed": "La mise à jour a échoué"
 }
 

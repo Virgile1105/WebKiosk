@@ -1136,18 +1136,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get checking => 'Checking...';
 
   @override
-  String get defaultHomeScreen => 'Default Home Screen';
+  String get appUpdate => 'App Update';
 
   @override
-  String get notSet => 'NOT SET';
+  String get updateAvailable => 'Update Available';
 
   @override
-  String get defaultHomeEnabledDesc =>
-      'DeviceGate is set as the default home launcher';
+  String get upToDate => 'Up to date';
 
   @override
-  String get defaultHomeDisabledDesc => 'Tap to set DeviceGate as default home';
+  String get checkingForUpdate => 'Checking for updates...';
 
   @override
-  String get tapToChangeDefaultHome => 'Tap to change default home app';
+  String get downloadingUpdate => 'Downloading update...';
+
+  @override
+  String newVersionAvailable(String version) {
+    return 'New version $version available';
+  }
+
+  @override
+  String currentVersion(String version) {
+    return 'Current version: $version';
+  }
+
+  @override
+  String get update => 'Update';
+
+  @override
+  String updateConfirmation(String current, String latest) {
+    return 'Do you want to update from version $current to $latest?';
+  }
+
+  @override
+  String get updateFailed => 'Update failed';
 }

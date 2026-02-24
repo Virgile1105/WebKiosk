@@ -1165,20 +1165,38 @@ class AppLocalizationsFr extends AppLocalizations {
   String get checking => 'Vérification...';
 
   @override
-  String get defaultHomeScreen => 'Écran d\'accueil par défaut';
+  String get appUpdate => 'Mise à jour';
 
   @override
-  String get notSet => 'NON DÉFINI';
+  String get updateAvailable => 'Mise à jour disponible';
 
   @override
-  String get defaultHomeEnabledDesc =>
-      'DeviceGate est défini comme lanceur d\'accueil par défaut';
+  String get upToDate => 'À jour';
 
   @override
-  String get defaultHomeDisabledDesc =>
-      'Appuyez pour définir DeviceGate comme accueil par défaut';
+  String get checkingForUpdate => 'Vérification des mises à jour...';
 
   @override
-  String get tapToChangeDefaultHome =>
-      'Appuyez pour changer l\'application d\'accueil par défaut';
+  String get downloadingUpdate => 'Téléchargement de la mise à jour...';
+
+  @override
+  String newVersionAvailable(String version) {
+    return 'Nouvelle version $version disponible';
+  }
+
+  @override
+  String currentVersion(String version) {
+    return 'Version actuelle : $version';
+  }
+
+  @override
+  String get update => 'Mettre à jour';
+
+  @override
+  String updateConfirmation(String current, String latest) {
+    return 'Voulez-vous mettre à jour de la version $current vers $latest ?';
+  }
+
+  @override
+  String get updateFailed => 'La mise à jour a échoué';
 }

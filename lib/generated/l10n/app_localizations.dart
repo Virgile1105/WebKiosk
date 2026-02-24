@@ -2180,35 +2180,65 @@ abstract class AppLocalizations {
   /// **'Checking...'**
   String get checking;
 
-  /// No description provided for @defaultHomeScreen.
+  /// No description provided for @appUpdate.
   ///
   /// In en, this message translates to:
-  /// **'Default Home Screen'**
-  String get defaultHomeScreen;
+  /// **'App Update'**
+  String get appUpdate;
 
-  /// No description provided for @notSet.
+  /// No description provided for @updateAvailable.
   ///
   /// In en, this message translates to:
-  /// **'NOT SET'**
-  String get notSet;
+  /// **'Update Available'**
+  String get updateAvailable;
 
-  /// No description provided for @defaultHomeEnabledDesc.
+  /// No description provided for @upToDate.
   ///
   /// In en, this message translates to:
-  /// **'DeviceGate is set as the default home launcher'**
-  String get defaultHomeEnabledDesc;
+  /// **'Up to date'**
+  String get upToDate;
 
-  /// No description provided for @defaultHomeDisabledDesc.
+  /// No description provided for @checkingForUpdate.
   ///
   /// In en, this message translates to:
-  /// **'Tap to set DeviceGate as default home'**
-  String get defaultHomeDisabledDesc;
+  /// **'Checking for updates...'**
+  String get checkingForUpdate;
 
-  /// No description provided for @tapToChangeDefaultHome.
+  /// No description provided for @downloadingUpdate.
   ///
   /// In en, this message translates to:
-  /// **'Tap to change default home app'**
-  String get tapToChangeDefaultHome;
+  /// **'Downloading update...'**
+  String get downloadingUpdate;
+
+  /// No description provided for @newVersionAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'New version {version} available'**
+  String newVersionAvailable(String version);
+
+  /// No description provided for @currentVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Current version: {version}'**
+  String currentVersion(String version);
+
+  /// No description provided for @update.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get update;
+
+  /// No description provided for @updateConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want to update from version {current} to {latest}?'**
+  String updateConfirmation(String current, String latest);
+
+  /// No description provided for @updateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Update failed'**
+  String get updateFailed;
 }
 
 class _AppLocalizationsDelegate

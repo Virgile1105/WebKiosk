@@ -40,6 +40,9 @@ import android.os.UserManager
 import android.provider.Settings
 import android.accounts.AccountManager
 import android.net.Uri
+import androidx.core.content.FileProvider
+import org.json.JSONObject
+import org.json.JSONArray
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
@@ -682,6 +685,33 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error requesting location permission", e)
                         result.error("LOCATION_PERMISSION_ERROR", e.message, null)
+                    }
+                }
+                "checkForUpdate" -> {
+                    CoroutineScope(Dispatchers.Main).launch {
+                        try {
+                            val updateInfo = checkForUpdate()
+                            result.success(updateInfo)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error checking for update", e)
+                            result.error("UPDATE_CHECK_ERROR", e.message, null)
+                        }
+                    }
+                }
+                "downloadAndInstallUpdate" -> {
+                    val downloadUrl = call.argument<String>("downloadUrl")
+                    if (downloadUrl == null) {
+                        result.error("INVALID_ARGS", "downloadUrl is required", null)
+                        return@setMethodCallHandler
+                    }
+                    CoroutineScope(Dispatchers.Main).launch {
+                        try {
+                            val success = downloadAndInstallUpdate(downloadUrl)
+                            result.success(success)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error downloading/installing update", e)
+                            result.error("UPDATE_INSTALL_ERROR", e.message, null)
+                        }
                     }
                 }
 
@@ -3363,6 +3393,186 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting locked orientation", e)
             return "landscape"
+        }
+    }
+    
+    // ========== App Update Functions ==========
+    
+    private suspend fun checkForUpdate(): Map<String, Any?> = withContext(Dispatchers.IO) {
+        try {
+            val apiUrl = "https://api.github.com/repos/Virgile1105/DeviceGate/releases/latest"
+            val connection = URL(apiUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                Log.w(TAG, "GitHub API returned $responseCode")
+                return@withContext mapOf(
+                    "hasUpdate" to false,
+                    "error" to "GitHub API error: $responseCode"
+                )
+            }
+            
+            val response = connection.inputStream.bufferedReader().readText()
+            val json = JSONObject(response)
+            
+            val tagName = json.optString("tag_name", "")
+            val releaseName = json.optString("name", tagName)
+            val releaseBody = json.optString("body", "")
+            
+            // Parse version from tag (e.g., "v1.0.2-15" -> version="1.0.2", build=15)
+            val tagWithoutPrefix = tagName.removePrefix("v").removePrefix("V")
+            val (latestVersion, latestBuild) = parseVersionAndBuild(tagWithoutPrefix)
+            
+            // Get current app version and build code
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            val currentVersion = packageInfo.versionName ?: "0.0.0"
+            val currentBuild = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode
+            }
+            
+            // Full version strings for display (e.g., "1.0.1+10")
+            val currentFullVersion = "$currentVersion+$currentBuild"
+            val latestFullVersion = if (latestBuild > 0) "$latestVersion+$latestBuild" else latestVersion
+            
+            // Find APK download URL from assets
+            var downloadUrl: String? = null
+            val assets = json.optJSONArray("assets") ?: JSONArray()
+            for (i in 0 until assets.length()) {
+                val asset = assets.getJSONObject(i)
+                val name = asset.optString("name", "")
+                if (name.endsWith(".apk")) {
+                    downloadUrl = asset.optString("browser_download_url", null)
+                    break
+                }
+            }
+            
+            // Compare versions (including build number)
+            val hasUpdate = compareVersionsWithBuild(latestVersion, latestBuild, currentVersion, currentBuild) > 0
+            
+            Log.d(TAG, "Update check: current=$currentFullVersion, latest=$latestFullVersion, hasUpdate=$hasUpdate")
+            
+            return@withContext mapOf(
+                "hasUpdate" to hasUpdate,
+                "currentVersion" to currentFullVersion,
+                "latestVersion" to latestFullVersion,
+                "releaseName" to releaseName,
+                "releaseNotes" to releaseBody,
+                "downloadUrl" to downloadUrl
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking for update", e)
+            return@withContext mapOf(
+                "hasUpdate" to false,
+                "error" to e.message
+            )
+        }
+    }
+    
+    private fun parseVersionAndBuild(versionString: String): Pair<String, Int> {
+        // Parse versions like "1.0.2-15", "1.0.2+15", or "1.0.2"
+        val regex = Regex("""^([\d.]+)[-+]?(\d+)?$""")
+        val match = regex.find(versionString)
+        
+        return if (match != null) {
+            val version = match.groupValues[1]
+            val build = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
+            Pair(version, build)
+        } else {
+            // Fallback: treat whole string as version, no build
+            Pair(versionString.replace(Regex("[^\\d.]"), ""), 0)
+        }
+    }
+    
+    private fun compareVersionsWithBuild(v1: String, build1: Int, v2: String, build2: Int): Int {
+        // First compare version numbers
+        val versionCompare = compareVersions(v1, v2)
+        if (versionCompare != 0) return versionCompare
+        
+        // If versions are equal, compare build numbers
+        return build1.compareTo(build2)
+    }
+    
+    private fun compareVersions(v1: String, v2: String): Int {
+        val parts1 = v1.split(".").map { it.toIntOrNull() ?: 0 }
+        val parts2 = v2.split(".").map { it.toIntOrNull() ?: 0 }
+        val maxLen = maxOf(parts1.size, parts2.size)
+        
+        for (i in 0 until maxLen) {
+            val p1 = parts1.getOrElse(i) { 0 }
+            val p2 = parts2.getOrElse(i) { 0 }
+            if (p1 != p2) return p1.compareTo(p2)
+        }
+        return 0
+    }
+    
+    private suspend fun downloadAndInstallUpdate(downloadUrl: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Downloading update from: $downloadUrl")
+            
+            // Download APK to cache directory
+            val connection = URL(downloadUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 30000
+            connection.readTimeout = 60000
+            
+            // Follow redirects (GitHub uses them)
+            connection.instanceFollowRedirects = true
+            
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                Log.e(TAG, "Download failed with code: ${connection.responseCode}")
+                return@withContext false
+            }
+            
+            val apkFile = File(cacheDir, "update.apk")
+            connection.inputStream.use { input ->
+                FileOutputStream(apkFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            
+            Log.d(TAG, "APK downloaded to: ${apkFile.absolutePath}, size: ${apkFile.length()}")
+            
+            // Install the APK
+            withContext(Dispatchers.Main) {
+                installApk(apkFile)
+            }
+            
+            return@withContext true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading/installing update", e)
+            return@withContext false
+        }
+    }
+    
+    private fun installApk(apkFile: File) {
+        try {
+            val apkUri = FileProvider.getUriForFile(
+                this,
+                "$packageName.fileprovider",
+                apkFile
+            )
+            
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(apkUri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            
+            // Temporarily disable kiosk mode if active
+            if (isInKioskMode()) {
+                disableKioskMode()
+            }
+            
+            startActivity(installIntent)
+            Log.d(TAG, "Install intent started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error installing APK", e)
+            throw e
         }
     }
 }
