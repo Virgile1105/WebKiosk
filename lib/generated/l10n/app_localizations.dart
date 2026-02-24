@@ -2179,6 +2179,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Checking...'**
   String get checking;
+
+  /// No description provided for @defaultHomeScreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Default Home Screen'**
+  String get defaultHomeScreen;
+
+  /// No description provided for @notSet.
+  ///
+  /// In en, this message translates to:
+  /// **'NOT SET'**
+  String get notSet;
+
+  /// No description provided for @defaultHomeEnabledDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'DeviceGate is set as the default home launcher'**
+  String get defaultHomeEnabledDesc;
+
+  /// No description provided for @defaultHomeDisabledDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to set DeviceGate as default home'**
+  String get defaultHomeDisabledDesc;
+
+  /// No description provided for @tapToChangeDefaultHome.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to change default home app'**
+  String get tapToChangeDefaultHome;
 }
 
 class _AppLocalizationsDelegate

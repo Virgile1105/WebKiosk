@@ -1134,4 +1134,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get checking => 'Checking...';
+
+  @override
+  String get defaultHomeScreen => 'Default Home Screen';
+
+  @override
+  String get notSet => 'NOT SET';
+
+  @override
+  String get defaultHomeEnabledDesc =>
+      'DeviceGate is set as the default home launcher';
+
+  @override
+  String get defaultHomeDisabledDesc => 'Tap to set DeviceGate as default home';
+
+  @override
+  String get tapToChangeDefaultHome => 'Tap to change default home app';
 }

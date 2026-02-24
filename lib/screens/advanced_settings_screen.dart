@@ -73,8 +73,8 @@ class _AdvancedSettingsScreenState extends State<AdvancedSettingsScreen> {
       try {
         final success = await platform.invokeMethod('removeDeviceOwner');
         
-        // Reload device owner status after removal
-        await _loadDeviceOwnerStatus();
+        // Reload status after removal
+        await _loadStatus();
         
         if (mounted) {
           if (success) {

@@ -1745,13 +1745,18 @@ class MainActivity : FlutterActivity() {
                     )
                     Log.i(TAG, "Current location permission grant state: $currentGrantState")
 
-                    devicePolicyManager.setPermissionGrantState(
-                        adminComponent,
-                        packageName,
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
-                    )
-                    Log.i(TAG, "Granted ACCESS_FINE_LOCATION permission via Device Owner")
+                    // Only grant permission if not already granted (to avoid repeated notifications)
+                    if (currentGrantState != DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                        devicePolicyManager.setPermissionGrantState(
+                            adminComponent,
+                            packageName,
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED
+                        )
+                        Log.i(TAG, "Granted ACCESS_FINE_LOCATION permission via Device Owner")
+                    } else {
+                        Log.i(TAG, "ACCESS_FINE_LOCATION already granted, skipping")
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to grant location permission via Device Owner", e)
                 }

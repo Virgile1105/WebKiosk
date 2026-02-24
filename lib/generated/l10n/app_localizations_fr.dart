@@ -1163,4 +1163,22 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get checking => 'Vérification...';
+
+  @override
+  String get defaultHomeScreen => 'Écran d\'accueil par défaut';
+
+  @override
+  String get notSet => 'NON DÉFINI';
+
+  @override
+  String get defaultHomeEnabledDesc =>
+      'DeviceGate est défini comme lanceur d\'accueil par défaut';
+
+  @override
+  String get defaultHomeDisabledDesc =>
+      'Appuyez pour définir DeviceGate comme accueil par défaut';
+
+  @override
+  String get tapToChangeDefaultHome =>
+      'Appuyez pour changer l\'application d\'accueil par défaut';
 }

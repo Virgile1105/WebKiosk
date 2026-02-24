@@ -81,6 +81,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   bool _showLoadingIndicator = false; // Controls actual visibility of loading overlay
   int _lastReportedProgress = 0; // Track last progress to throttle updates
 
+  DateTime? _lastWifiInfoFetch; // Track last WiFi info fetch time to prevent spam
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -345,6 +347,14 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   Future<void> _fetchWifiInfo() async {
+    // Debounce: don't fetch WiFi info more than once every 5 seconds (permission is now cached, so this is just for performance)
+    final now = DateTime.now();
+    if (_lastWifiInfoFetch != null && now.difference(_lastWifiInfoFetch!).inSeconds < 5) {
+      log('_fetchWifiInfo skipped - called too recently (${now.difference(_lastWifiInfoFetch!).inSeconds}s ago)');
+      return;
+    }
+    _lastWifiInfoFetch = now;
+
     log('_fetchWifiInfo called');
     try {
       final wifiInfo = await platform.invokeMethod('getWifiInfo');
@@ -723,8 +733,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             log('WebView error: ${error.description} (isForMainFrame: ${error.isForMainFrame})');
             // Only show error page for main frame errors (actual page load failures)
             // Ignore sub-resource errors (images, scripts, CSS, etc.)
-            if (error.isForMainFrame == true && mounted) {
-              // Fetch WiFi information for the error page
+            if (error.isForMainFrame == true && mounted && !_hasError) {
+              // Only fetch WiFi info once when first entering error state
               _fetchWifiInfo();
               // Start periodic network check
               _startNetworkCheckTimer();
@@ -2070,8 +2080,8 @@ Widget _buildSavedNetworkItem(dynamic network) {
     // Cancel any existing timer
     _networkCheckTimer?.cancel();
     
-    // Start a periodic timer to check network status every 3 seconds (reduced from 1 for performance)
-    _networkCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    // Start a periodic timer to check network status every second for responsive UI updates
+    _networkCheckTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _hasError) {
         // Update WiFi info
         _fetchWifiInfo();
