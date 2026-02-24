@@ -443,6 +443,15 @@ class MainActivity : FlutterActivity() {
                         result.error("IME_ERROR", e.message, null)
                     }
                 }
+                "resetInputConnection" -> {
+                    try {
+                        resetInputConnection()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error resetting input connection", e)
+                        result.error("INPUT_ERROR", e.message, null)
+                    }
+                }
                 "clearDeviceOwner" -> {
                     try {
                         val devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -1745,6 +1754,41 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "IME restored to default behavior, aggressive flags removed")
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring IME default", e)
+        }
+    }
+
+    /**
+     * Resets the InputMethod connection to ensure hardware keyboard/scanner input works
+     * after soft keyboard usage. This should be called when navigating to a WebView.
+     */
+    private fun resetInputConnection() {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            
+            // Step 1: Clear any aggressive IME flags
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            window?.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED or
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            )
+            
+            // Step 2: Restart input on the current view
+            currentFocus?.let { view ->
+                imm.restartInput(view)
+                Log.d(TAG, "InputMethod restarted on focused view: ${view.javaClass.simpleName}")
+            }
+            
+            // Step 3: If no focus, try to restart on the decor view
+            if (currentFocus == null) {
+                window?.decorView?.let { decorView ->
+                    imm.restartInput(decorView)
+                    Log.d(TAG, "InputMethod restarted on decor view")
+                }
+            }
+            
+            Log.d(TAG, "Input connection reset completed - scanner should now receive input")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting input connection", e)
         }
     }
 

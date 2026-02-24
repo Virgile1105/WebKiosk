@@ -288,6 +288,17 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
     }
   }
 
+  /// Resets the input connection to ensure hardware keyboard/scanner works
+  /// after soft keyboard usage. Call this when navigating to WebView.
+  Future<void> _resetInputConnection() async {
+    try {
+      await platform.invokeMethod('resetInputConnection');
+      log('Input connection reset - scanner should receive input');
+    } catch (e) {
+      log('Error resetting input connection: $e');
+    }
+  }
+
   Future<void> _loadCustomSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -590,6 +601,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   void _initializeWebView() {
+    // Reset input connection to ensure hardware keyboard/scanner works
+    // after soft keyboard usage in DeviceGate
+    _resetInputConnection();
+    
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       // Clear cache to ensure fresh loading for each shortcut
