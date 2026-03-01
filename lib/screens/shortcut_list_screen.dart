@@ -140,7 +140,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final shortcutsJson = prefs.getString('shortcuts') ?? '';
-      final shortcuts = ShortcutItem.decodeList(shortcutsJson);
+      var shortcuts = ShortcutItem.decodeList(shortcutsJson);
       
       // Add default SAP_EWM shortcut if no shortcuts exist
       if (shortcuts.isEmpty) {
@@ -152,9 +152,35 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           disableAutoFocus: false,
           useCustomKeyboard: true,
           disableCopyPaste: false,
+          isSapEwm: true,
         ));
         // Save the default shortcut
         await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+      } else {
+        // Migration: Set isSapEwm=true for existing SAP EWM shortcuts that don't have it
+        bool needsSave = false;
+        for (int i = 0; i < shortcuts.length; i++) {
+          if (!shortcuts[i].isSapEwm && 
+              (shortcuts[i].id == 'sap_ewm_default' || 
+               shortcuts[i].url.contains('sapcrx102.inapa.group'))) {
+            log('Migrating shortcut ${shortcuts[i].name} to isSapEwm=true');
+            shortcuts[i] = ShortcutItem(
+              id: shortcuts[i].id,
+              name: shortcuts[i].name,
+              url: shortcuts[i].url,
+              iconUrl: shortcuts[i].iconUrl,
+              disableAutoFocus: shortcuts[i].disableAutoFocus,
+              useCustomKeyboard: shortcuts[i].useCustomKeyboard,
+              disableCopyPaste: shortcuts[i].disableCopyPaste,
+              enableWarningSound: shortcuts[i].enableWarningSound,
+              isSapEwm: true,
+            );
+            needsSave = true;
+          }
+        }
+        if (needsSave) {
+          await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
+        }
       }
       
       _shortcuts = shortcuts;
@@ -777,6 +803,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
             useCustomKeyboard: updatedShortcut.useCustomKeyboard,
             disableCopyPaste: updatedShortcut.disableCopyPaste,
             enableWarningSound: updatedShortcut.enableWarningSound,
+            isSapEwm: updatedShortcut.isSapEwm,
             shortcutIconUrl: updatedShortcut.iconUrl,
             shortcutName: updatedShortcut.name,
           ),

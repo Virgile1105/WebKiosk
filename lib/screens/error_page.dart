@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../generated/l10n/app_localizations.dart';
+import '../services/firebaseDataManagement.dart';
+import '../models/class.dart';
 
 /// Reusable error page widget that displays error information
 /// with Retry and Reload buttons
-class ErrorPage extends StatelessWidget {
+class ErrorPage extends StatefulWidget {
   final String? errorTitle;
   final String? errorMessage;
   final Object? error;
@@ -27,10 +29,29 @@ class ErrorPage extends StatelessWidget {
   });
 
   @override
+  State<ErrorPage> createState() => _ErrorPageState();
+}
+
+class _ErrorPageState extends State<ErrorPage> {
+  @override
+  void initState() {
+    super.initState();
+    // Log DeviceGate error to Firestore
+    FirebaseDataManagement.writeError(
+      errorType: ErrorType.devicegateError,
+      errorDescription: widget.errorMessage ?? 'Unknown error',
+      errorTitle: widget.errorTitle ?? 'DeviceGate Error',
+      stackTrace: widget.stackTrace?.toString() ?? '',
+      errorClass: widget.error?.runtimeType.toString() ?? '',
+      serverMessage: widget.error?.toString() ?? '',
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final displayTitle = errorTitle ?? l10n.errorOccurred;
-    final displayMessage = errorMessage ?? l10n.unexpectedError;
+    final displayTitle = widget.errorTitle ?? l10n.errorOccurred;
+    final displayMessage = widget.errorMessage ?? l10n.unexpectedError;
     
     return Scaffold(
       body: Container(
@@ -69,7 +90,7 @@ class ErrorPage extends StatelessWidget {
               const SizedBox(height: 32),
               
               // Technical details section (error message only)
-              if (showTechnicalDetails && error != null)
+              if (widget.showTechnicalDetails && widget.error != null)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -112,7 +133,7 @@ class ErrorPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: SelectableText(
-                          error.toString(),
+                          widget.error.toString(),
                           style: TextStyle(
                             fontSize: 11,
                             fontFamily: 'monospace',
@@ -130,9 +151,9 @@ class ErrorPage extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (onRetry != null) ...[
+                  if (widget.onRetry != null) ...[        
                     ElevatedButton.icon(
-                      onPressed: onRetry,
+                      onPressed: widget.onRetry,
                       icon: const Icon(Icons.refresh),
                       label: Text(l10n.retry),
                       style: ElevatedButton.styleFrom(
@@ -143,9 +164,9 @@ class ErrorPage extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
                   ],
-                  if (onReload != null) ...[
+                  if (widget.onReload != null) ...[                                     
                     OutlinedButton.icon(
-                      onPressed: onReload,
+                      onPressed: widget.onReload,
                       icon: const Icon(Icons.restart_alt),
                       label: Text(l10n.reload),
                       style: OutlinedButton.styleFrom(
@@ -155,9 +176,9 @@ class ErrorPage extends StatelessWidget {
                     ),
                     const SizedBox(width: 16),
                   ],
-                  if (onExit != null)
+                  if (widget.onExit != null)
                     ElevatedButton.icon(
-                      onPressed: onExit,
+                      onPressed: widget.onExit,
                       icon: const Icon(Icons.home),
                       label: Text(l10n.quit),
                       style: ElevatedButton.styleFrom(
@@ -172,7 +193,7 @@ class ErrorPage extends StatelessWidget {
               const SizedBox(height: 32),
               
               // Stack Trace section
-              if (showTechnicalDetails && stackTrace != null)
+              if (widget.showTechnicalDetails && widget.stackTrace != null)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -201,7 +222,7 @@ class ErrorPage extends StatelessWidget {
                         constraints: const BoxConstraints(maxHeight: 200),
                         child: SingleChildScrollView(
                           child: SelectableText(
-                            stackTrace.toString(),
+                            widget.stackTrace.toString(),
                             style: TextStyle(
                               fontSize: 10,
                               fontFamily: 'monospace',

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import '../models/device_info.dart';
 import '../utils/logger.dart';
 
 /// Singleton service that manages Bluetooth EventChannel subscription
@@ -34,6 +35,9 @@ class BluetoothService {
           }).toList();
           _controller.add(_lastDevices);
           log('BluetoothService: Received ${_lastDevices.length} devices');
+          
+          // Update DeviceInfo with all paired devices and their status
+          _updateBluetoothDevices();
         }
       },
       onError: (error) {
@@ -41,6 +45,27 @@ class BluetoothService {
       },
     );
     log('BluetoothService initialized');
+  }
+  
+  /// Updates DeviceInfo with all paired Bluetooth devices and their connection status
+  void _updateBluetoothDevices() {
+    final List<Map<String, String>> devices = [];
+    
+    for (final device in _lastDevices) {
+      final name = device['name'] as String? ?? '';
+      final isConnected = device['isConnected'] == true;
+      
+      if (name.isNotEmpty) {
+        devices.add({
+          'name': name,
+          'status': isConnected ? 'connected' : 'not connected',
+        });
+      }
+    }
+    
+    // Update DeviceInfo
+    DeviceInfo().bluetoothDevices = devices;
+    log('BluetoothService: Updated ${devices.length} paired devices');
   }
   
   /// Dispose the service (call when app is closing)

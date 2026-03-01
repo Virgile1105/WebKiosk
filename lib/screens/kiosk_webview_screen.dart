@@ -1,4 +1,5 @@
 import 'package:devicegate/services/firebaseDataManagement.dart';
+import 'package:devicegate/services/sap_status_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'dart:async';
@@ -12,6 +13,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import '../utils/logger.dart';
 import '../models/shortcut_item.dart';
+import '../models/method.dart';
+import '../models/class.dart';
 import '../generated/l10n/app_localizations.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
@@ -25,6 +28,7 @@ class KioskWebViewScreen extends StatefulWidget {
   final bool useCustomKeyboard;
   final bool disableCopyPaste;
   final bool enableWarningSound;
+  final bool isSapEwm;
   final String? shortcutIconUrl;
   final String? shortcutName;
   
@@ -36,6 +40,7 @@ class KioskWebViewScreen extends StatefulWidget {
     this.useCustomKeyboard = false,
     this.disableCopyPaste = false,
     this.enableWarningSound = false,
+    this.isSapEwm = false,
     this.shortcutIconUrl,
     this.shortcutName,
   });
@@ -227,6 +232,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       
       // Add observer to detect when screen comes back into view
       WidgetsBinding.instance.addObserver(this);
+      
+      // Notify SapStatusManager when entering SAP EWM
+      if (widget.isSapEwm) {
+        SapStatusManager().onEnterSapEwm();
+      }
     } catch (error, stackTrace) {
       log('Critical error in initState: $error');
       log('Stack trace: $stackTrace');
@@ -669,6 +679,34 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           }
         },
       )
+      ..addJavaScriptChannel(
+        'saveSapUserChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          final sapUser = message.message.trim();
+          if (sapUser.isNotEmpty) {
+            log('SAP user captured: $sapUser');
+            // Save asynchronously - fire and forget
+            saveSapUser(sapUser);
+          }
+        },
+      )
+      ..addJavaScriptChannel(
+        'saveSapRessourceChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          final sapRessource = message.message.trim();
+          if (sapRessource.isNotEmpty) {
+            log('SAP ressource captured: $sapRessource');
+            // Save asynchronously - fire and forget
+            saveSapRessource(sapRessource);
+          }
+        },
+      )
+      ..addJavaScriptChannel(
+        'sapErrorChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          _handleSapErrorDetected(message.message);
+        },
+      )
       // Load blank page first, then actual URL
       ..loadHtmlString('<html><head><style>body { background: white; margin: 0; }</style></head><body></body></html>')
       ..setNavigationDelegate(
@@ -708,8 +746,16 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               if (_useCustomKeyboardRuntime) {
                 _setupCustomKeyboard();
               }
-              // Check for SAP error pages (server returns 500 with HTML content)
-              _checkForSapError(url);
+
+              // Set up SAP user/ressource capture and notify status manager for SAP EWM shortcuts
+              if (widget.isSapEwm) {
+                _setupSapUserCapture();
+                _setupSapRessourceCapture();
+                // Check for SAP error pages (server returns 500 with HTML content)
+                 _checkForSapError(url); 
+                // Notify page change to status manager (handles Firestore writes on status changes)
+                SapStatusManager().onPageChange();
+              }
             }
           },
           onPageStarted: (String url) {
@@ -907,7 +953,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       (function() {
         // Check if custom keyboard is already set up
         if (window.customKeyboardSetup) {
-          console.log('Custom keyboard already set up, skipping');
           return;
         }
         window.customKeyboardSetup = true;
@@ -1063,7 +1108,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                 doc.head.appendChild(script);
               }
             } catch (e) {
-              console.log('Cannot access iframe');
+              // Cannot access cross-origin iframe
             }
           });
 
@@ -1109,8 +1154,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             }
           }
         }
-
-        console.log('Custom keyboard JavaScript injected');
       })();
     ''');
   }
@@ -1159,11 +1202,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   /// Checks if the loaded page is a SAP error page and navigates to SapErrorPage if detected
-  Future<void> _checkForSapError(String url) async {
-    try {
-      // Run JavaScript to detect SAP error page patterns
-      final result = await _controller.runJavaScriptReturningResult('''
-        (function() {
+  /// Checks for SAP error page (non-blocking - uses JavaScript channel)
+  void _checkForSapError(String url) {
+    // Run JavaScript to detect SAP error page patterns (non-blocking)
+    // If error is detected, it posts to sapErrorChannel
+    _controller.runJavaScript('''
+      (function() {
+        try {
           // Check for SAP-specific indicators
           var sapLogo = document.querySelector('img[alt*="SAP"]');
           var sapCopyright = document.body.innerHTML.indexOf('SAP SE') !== -1;
@@ -1172,7 +1217,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           var isSapError = sapLogo && sapCopyright;
           
           if (!isSapError) {
-            return JSON.stringify({ detected: false });
+            return; // No error, do nothing
           }
           
           // Extract error header text (e.g., "500 Internal Server Error")
@@ -1226,70 +1271,173 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             }
           }
           
-          return JSON.stringify({
-            detected: true,
+          // Post to channel - include URL for navigation
+          sapErrorChannel.postMessage(JSON.stringify({
             errorHeader: errorHeaderText,
             detailText: detailTextContent,
-            serverTime: serverTime
-          });
-        })()
-      ''');
+            serverTime: serverTime,
+            url: window.location.href
+          }));
+        } catch (e) {
+          // Silently ignore errors
+        }
+      })();
+    ''');
+  }
+
+  /// Handles SAP error detection from JavaScript channel (called asynchronously)
+  void _handleSapErrorDetected(String messageJson) {
+    try {
+      final Map<String, dynamic> data = json.decode(messageJson);
       
-      // Parse the result
-      String jsonStr = result.toString();
-      log('SAP error check result: $jsonStr');
+      final errorHeader = data['errorHeader'] as String? ?? 'Server Error';
+      final detailText = data['detailText'] as String? ?? '';
+      final serverTime = data['serverTime'] as String? ?? '';
+      final url = data['url'] as String? ?? _currentUrl;
       
-      // Remove quotes if the result is a quoted string
-      if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
-        jsonStr = jsonStr.substring(1, jsonStr.length - 1);
-        // Unescape the string
-        jsonStr = jsonStr.replaceAll(r'\"', '"').replaceAll(r'\\', r'\');
-      }
+      log('SAP error detected: $errorHeader | Details: $detailText | Time: $serverTime');
       
-      final Map<String, dynamic> data = json.decode(jsonStr);
+      if (!mounted) return;
       
-      if (data['detected'] == true && mounted) {
-        final errorHeader = data['errorHeader'] as String? ?? 'Server Error';
-        final detailText = data['detailText'] as String? ?? '';
-        final serverTime = data['serverTime'] as String? ?? '';
-        
-        log('SAP error detected: $errorHeader | Details: $detailText | Time: $serverTime');
-        
-        // Navigate to SAP error page (use push, not pushReplacement, so WebView stays in stack)
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => SapErrorPage(
-              errorHeader: errorHeader,
-              detailText: detailText,
-              serverTime: serverTime,
-              url: url,
-              onRetry: () {
-                Navigator.of(context).pop();
-                _controller.reload();
-              },
-              onReload: () {
-                Navigator.of(context).pop();
-                _controller.loadRequest(
-                  Uri.parse(widget.initialUrl),
-                  headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                  },
-                );
-              },
-              onExit: () {
-                // Pop SAP error page, then pop the WebView to go back to shortcut list
-                Navigator.of(context).pop();
-                Navigator.of(context).pop();
-              },
-            ),
+      // Navigate to SAP error page (use push, not pushReplacement, so WebView stays in stack)
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => SapErrorPage(
+            errorHeader: errorHeader,
+            detailText: detailText,
+            serverTime: serverTime,
+            url: url,
+            onRetry: () {
+              Navigator.of(context).pop();
+              _controller.reload();
+            },
+            onReload: () {
+              Navigator.of(context).pop();
+              _controller.loadRequest(
+                Uri.parse(widget.initialUrl),
+                headers: {
+                  'Cache-Control': 'no-cache, no-store, must-revalidate',
+                  'Pragma': 'no-cache',
+                  'Expires': '0',
+                },
+              );
+            },
+            onExit: () {
+              // Pop SAP error page, then pop the WebView to go back to shortcut list
+              Navigator.of(context).pop();
+              Navigator.of(context).pop();
+            },
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
-      log('Error checking for SAP error: $e');
+      log('Error handling SAP error detection: $e');
     }
+  }
+
+  /// Sets up JavaScript to capture SAP user from login form before submission
+  void _setupSapUserCapture() {
+    _controller.runJavaScript('''
+      (function() {
+        // Check if SAP user capture is already set up
+        if (window.sapUserCaptureSetup) {
+          return;
+        }
+        
+        // Check if this is a SAP login page with sap-user field
+        var sapUserField = document.getElementById('sap-user') || document.querySelector('input[name="sap-user"]');
+        if (!sapUserField) {
+          return;
+        }
+        
+        window.sapUserCaptureSetup = true;
+        
+        // Override the form submit to capture sap-user before submission
+        var form = document.querySelector('form[name="MobileLoginForm"]') || document.querySelector('form');
+        if (form) {
+          var originalSubmit = form.submit.bind(form);
+          form.submit = function() {
+            var userField = document.getElementById('sap-user') || document.querySelector('input[name="sap-user"]');
+            if (userField && userField.value && userField.value.trim() !== '') {
+              try {
+                saveSapUserChannel.postMessage(userField.value.trim());
+              } catch (e) {
+                // Silently ignore channel errors
+              }
+            }
+            return originalSubmit();
+          };
+        }
+        
+        // Also intercept the MobileSubmitLogin function if it exists
+        if (typeof window.MobileSubmitLogin === 'function') {
+          var originalMobileSubmitLogin = window.MobileSubmitLogin;
+          window.MobileSubmitLogin = function(value) {
+            var userField = document.getElementById('sap-user') || document.querySelector('input[name="sap-user"]');
+            if (userField && userField.value && userField.value.trim() !== '') {
+              try {
+                saveSapUserChannel.postMessage(userField.value.trim());
+              } catch (e) {
+                // Silently ignore channel errors
+              }
+            }
+            return originalMobileSubmitLogin(value);
+          };
+        }
+      })();
+    ''');
+  }
+
+  void _setupSapRessourceCapture() {
+    _controller.runJavaScript('''
+      (function() {
+        // Check if SAP ressource capture is already set up
+        if (window.sapRessourceCaptureSetup) {
+          return;
+        }
+        
+        // Check if this is a SAP page with ressource field
+        var ressourceField = document.querySelector('input[name="/scwm/s_rsrc-rsrc[1]"]');
+        if (!ressourceField) {
+          return;
+        }
+        
+        window.sapRessourceCaptureSetup = true;
+        
+        // Override the form submit to capture ressource before submission
+        var form = document.querySelector('form[name="mobileform"]') || document.querySelector('form');
+        if (form) {
+          var originalSubmit = form.submit.bind(form);
+          form.submit = function() {
+            var rsrcField = document.querySelector('input[name="/scwm/s_rsrc-rsrc[1]"]');
+            if (rsrcField && rsrcField.value && rsrcField.value.trim() !== '') {
+              try {
+                saveSapRessourceChannel.postMessage(rsrcField.value.trim());
+              } catch (e) {
+                // Silently ignore channel errors
+              }
+            }
+            return originalSubmit();
+          };
+        }
+        
+        // Also intercept setOkCode function if it exists (SAP buttons use this)
+        if (typeof window.setOkCode === 'function') {
+          var originalSetOkCode = window.setOkCode;
+          window.setOkCode = function(value) {
+            var rsrcField = document.querySelector('input[name="/scwm/s_rsrc-rsrc[1]"]');
+            if (rsrcField && rsrcField.value && rsrcField.value.trim() !== '') {
+              try {
+                saveSapRessourceChannel.postMessage(rsrcField.value.trim());
+              } catch (e) {
+                // Silently ignore channel errors
+              }
+            }
+            return originalSetOkCode(value);
+          };
+        }
+      })();
+    ''');
   }
 
   @override
@@ -2157,7 +2305,6 @@ Widget _buildSavedNetworkItem(dynamic network) {
     try {
       // First, reset the JavaScript flag to allow re-initialization
       await _controller.runJavaScript('''
-        console.log('Resetting custom keyboard setup flag');
         window.customKeyboardSetup = false;
         window.inputListenersSetup = false;
       ''');
@@ -2366,13 +2513,13 @@ Widget _buildSavedNetworkItem(dynamic network) {
               final canConnect = _websiteStatus?['canConnect'] == true;
               final normalizedInternetStatus = canConnect ? 'up' : 'down';
               
-              FirebaseDataManagement.writeNetworkIssue(
+              FirebaseDataManagement.writeError(
+                errorType: ErrorType.networkError,
+                errorDescription: _errorDescription,
                 networkWiFiName: _wifiInfo?['currentNetwork']?['ssid']?.toString() ?? '',
                 networkWiFiStatus: normalizedWifiStatus,
-                networSignalStrength: _wifiInfo?['currentNetwork']?['signalStrength']?.toString() ?? '',
+                networkSignalStrength: _wifiInfo?['currentNetwork']?['signalStrength']?.toString() ?? '',
                 internetStatus: normalizedInternetStatus,
-                errorDescription: _errorDescription,
-                context: context,
               );
               isYetNetworkIssueSendToFirestore = true;
             }
@@ -4101,14 +4248,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
     if (isBackspace) {
       // Send backspace key
       _controller.runJavaScript('''
-        console.log('Keyboard: backspace pressed');
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          console.log('Keyboard: found active input for backspace');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
-            console.log('Keyboard: input supports selection, using setRangeText');
             const start = input.selectionStart;
             const end = input.selectionEnd;
             if (start !== end) {
@@ -4120,16 +4264,12 @@ Widget _buildSavedNetworkItem(dynamic network) {
             }
           } else {
             // For inputs that don't support selection, remove last character
-            console.log('Keyboard: input does not support selection, removing last char');
             if (input.value.length > 0) {
               input.value = input.value.slice(0, -1);
             }
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          console.log('Keyboard: backspace complete, value now:', input.value);
-        } else {
-          console.log('Keyboard: no active input found for backspace');
         }
       ''');
     } else if (key == '←') {
@@ -4170,14 +4310,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
     } else if (key == '⌫') {
       // Delete key (backspace functionality)
       _controller.runJavaScript('''
-        console.log('Keyboard: backspace pressed (⌫ key)');
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          console.log('Keyboard: found active input for backspace');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
-            console.log('Keyboard: input supports selection, using setRangeText');
             const start = input.selectionStart;
             const end = input.selectionEnd;
             if (start !== end) {
@@ -4189,16 +4326,12 @@ Widget _buildSavedNetworkItem(dynamic network) {
             }
           } else {
             // For inputs that don't support selection, remove last character
-            console.log('Keyboard: input does not support selection, removing last char');
             if (input.value.length > 0) {
               input.value = input.value.slice(0, -1);
             }
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          console.log('Keyboard: backspace complete, value now:', input.value);
-        } else {
-          console.log('Keyboard: no active input found for backspace');
         }
       ''');
     } else if (key == 'Tab') {
@@ -4346,7 +4479,6 @@ Widget _buildSavedNetworkItem(dynamic network) {
     } else if (key == '⏎') {
       // Enter key - dispatch native enter key events to let the page handle it
       _controller.runJavaScript('''
-        console.log('Keyboard: Enter key pressed, dispatching native events');
         if (document.activeElement) {
           // Dispatch keydown event
           const keydownEvent = new KeyboardEvent('keydown', {
@@ -4383,10 +4515,6 @@ Widget _buildSavedNetworkItem(dynamic network) {
             cancelable: true
           });
           document.activeElement.dispatchEvent(keyupEvent);
-          
-          console.log('Keyboard: Enter events dispatched');
-        } else {
-          console.log('Keyboard: no active element found');
         }
       ''');
     } else {
@@ -4425,28 +4553,21 @@ Widget _buildSavedNetworkItem(dynamic network) {
       
       final escapedKey = jsonEncode(keyToSend);
       _controller.runJavaScript('''
-        console.log('Keyboard: attempting to insert key');
         var keyToInsert = $escapedKey;
         if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-          console.log('Keyboard: found active input element');
           const input = document.activeElement;
           
           // Check if input supports selection
           if (input.selectionStart !== null && input.selectionEnd !== null) {
             const start = input.selectionStart;
             const end = input.selectionEnd;
-            console.log('Keyboard: inserting key at position', start, end);
             input.setRangeText(keyToInsert, start, end, 'end');
           } else {
             // For inputs that don't support selection (like email, password), append to value
-            console.log('Keyboard: input does not support selection, appending to value');
             input.value += keyToInsert;
           }
           
           input.dispatchEvent(new Event('input', { bubbles: true }));
-          console.log('Keyboard: insertion complete, value now:', input.value);
-        } else {
-          console.log('Keyboard: no active input element found, activeElement:', document.activeElement);
         }
       ''');
     }
@@ -4549,6 +4670,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
     _keyboardPositionSaveTimer?.cancel();
     _minimizedIconPositionSaveTimer?.cancel();
     _loadingIndicatorDelayTimer?.cancel();
+    
+    // Notify SapStatusManager when leaving SAP EWM
+    if (widget.isSapEwm) {
+      SapStatusManager().onLeaveSapEwm();
+    }
     
     // Clean up WebView controller
     _controller.clearCache();

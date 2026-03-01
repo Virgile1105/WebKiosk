@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../generated/l10n/app_localizations.dart';
+import '../services/firebaseDataManagement.dart';
+import '../models/class.dart';
 
-class SapErrorPage extends StatelessWidget {
+class SapErrorPage extends StatefulWidget {
   final String errorHeader;  // e.g., "500 Internal Server Error"
   final String detailText;   // e.g., "System error"
   final String serverTime;   // e.g., "2026-03-01 12:42:19"
@@ -21,9 +23,30 @@ class SapErrorPage extends StatelessWidget {
     this.onExit,
   });
 
+  @override
+  State<SapErrorPage> createState() => _SapErrorPageState();
+}
+
+class _SapErrorPageState extends State<SapErrorPage> {
+  @override
+  void initState() {
+    super.initState();
+    // Log SAP error to Firestore
+    final statusCode = _extractStatusCode();
+    FirebaseDataManagement.writeError(
+      errorType: ErrorType.sapError,
+      errorDescription: widget.detailText,
+      errorTitle: widget.errorHeader,
+      httpStatusCode: statusCode,
+      httpStatusMessage: widget.errorHeader,
+      url: widget.url,
+      serverTime: widget.serverTime,
+    );
+  }
+
   int _extractStatusCode() {
     // Extract status code from header like "500 Internal Server Error"
-    final match = RegExp(r'(\d{3})').firstMatch(errorHeader);
+    final match = RegExp(r'(\d{3})').firstMatch(widget.errorHeader);
     return match != null ? int.tryParse(match.group(1)!) ?? 500 : 500;
   }
 
@@ -39,7 +62,7 @@ class SapErrorPage extends StatelessWidget {
 
   bool _isSessionTimeout() {
     // Check for session no longer exists error
-    return detailText.toLowerCase().contains('session no longer exists');
+    return widget.detailText.toLowerCase().contains('session no longer exists');
   }
 
   @override
@@ -114,7 +137,7 @@ class SapErrorPage extends StatelessWidget {
                 
                 // Error header (e.g., "500 Internal Server Error")
                 Text(
-                  errorHeader,
+                  widget.errorHeader,
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
@@ -125,7 +148,7 @@ class SapErrorPage extends StatelessWidget {
                 const SizedBox(height: 16),
                 
                 // Detail text (e.g., "System error")
-                if (detailText.isNotEmpty) ...[
+                if (widget.detailText.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -152,7 +175,7 @@ class SapErrorPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         SelectableText(
-                          detailText,
+                          widget.detailText,
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.red.shade900,
@@ -165,7 +188,7 @@ class SapErrorPage extends StatelessWidget {
                 ],
                 
                 // Server time
-                if (serverTime.isNotEmpty) ...[
+                if (widget.serverTime.isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -192,7 +215,7 @@ class SapErrorPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         SelectableText(
-                          serverTime,
+                          widget.serverTime,
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey.shade800,
@@ -222,7 +245,7 @@ class SapErrorPage extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 32),
                             child: ElevatedButton.icon(
-                              onPressed: isSessionTimeout ? null : onRetry,
+                              onPressed: isSessionTimeout ? null : widget.onRetry,
                               icon: const Icon(Icons.refresh),
                               label: Text(l10n.retry),
                               style: ElevatedButton.styleFrom(
@@ -238,7 +261,7 @@ class SapErrorPage extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 32),
                             child: OutlinedButton.icon(
-                              onPressed: onReload,
+                              onPressed: widget.onReload,
                               icon: const Icon(Icons.restart_alt),
                               label: Text(l10n.reload),
                               style: OutlinedButton.styleFrom(
@@ -251,7 +274,7 @@ class SapErrorPage extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 32),
                             child: ElevatedButton.icon(
-                              onPressed: onExit,
+                              onPressed: widget.onExit,
                               icon: const Icon(Icons.home),
                               label: Text(l10n.quit),
                               style: ElevatedButton.styleFrom(
@@ -269,7 +292,7 @@ class SapErrorPage extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           ElevatedButton.icon(
-                            onPressed: isSessionTimeout ? null : onRetry,
+                            onPressed: isSessionTimeout ? null : widget.onRetry,
                             icon: const Icon(Icons.refresh),
                             label: Text(l10n.retry),
                             style: ElevatedButton.styleFrom(
@@ -282,7 +305,7 @@ class SapErrorPage extends StatelessWidget {
                           ),
                           const SizedBox(width: 16),
                           OutlinedButton.icon(
-                            onPressed: onReload,
+                            onPressed: widget.onReload,
                             icon: const Icon(Icons.restart_alt),
                             label: Text(l10n.reload),
                             style: OutlinedButton.styleFrom(
@@ -292,7 +315,7 @@ class SapErrorPage extends StatelessWidget {
                           ),
                           const SizedBox(width: 16),
                           ElevatedButton.icon(
-                            onPressed: onExit,
+                            onPressed: widget.onExit,
                             icon: const Icon(Icons.home),
                             label: Text(l10n.quit),
                             style: ElevatedButton.styleFrom(
@@ -340,7 +363,7 @@ class SapErrorPage extends StatelessWidget {
                         child: SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: SelectableText(
-                            url,
+                            widget.url,
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade800,

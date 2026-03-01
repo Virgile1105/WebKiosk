@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../generated/l10n/app_localizations.dart';
+import '../services/firebaseDataManagement.dart';
+import '../models/class.dart';
 
-class HttpErrorPage extends StatelessWidget {
+class HttpErrorPage extends StatefulWidget {
   final int statusCode;
   final String url;
   final String? serverMessage;
@@ -19,9 +21,42 @@ class HttpErrorPage extends StatelessWidget {
     this.onExit,
   });
 
+  @override
+  State<HttpErrorPage> createState() => _HttpErrorPageState();
+}
+
+class _HttpErrorPageState extends State<HttpErrorPage> {
+  @override
+  void initState() {
+    super.initState();
+    // Log HTTP error to Firestore
+    FirebaseDataManagement.writeError(
+      errorType: ErrorType.httpError,
+      errorDescription: 'HTTP ${widget.statusCode} error',
+      httpStatusCode: widget.statusCode,
+      httpStatusMessage: _getHttpStatusMessage(widget.statusCode),
+      url: widget.url,
+      serverMessage: widget.serverMessage ?? '',
+    );
+  }
+
+  String _getHttpStatusMessage(int statusCode) {
+    switch (statusCode) {
+      case 400: return 'Bad Request';
+      case 401: return 'Unauthorized';
+      case 403: return 'Forbidden';
+      case 404: return 'Not Found';
+      case 500: return 'Internal Server Error';
+      case 502: return 'Bad Gateway';
+      case 503: return 'Service Unavailable';
+      case 504: return 'Gateway Timeout';
+      default: return 'HTTP Error $statusCode';
+    }
+  }
+
   String _getErrorTitle(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    switch (statusCode) {
+    switch (widget.statusCode) {
       case 400:
         return l10n.httpError400Title;
       case 401:
@@ -39,13 +74,13 @@ class HttpErrorPage extends StatelessWidget {
       case 504:
         return l10n.httpError504Title;
       default:
-        return l10n.httpErrorDefaultTitle(statusCode);
+        return l10n.httpErrorDefaultTitle(widget.statusCode);
     }
   }
 
   String _getErrorDescription(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    switch (statusCode) {
+    switch (widget.statusCode) {
       case 400:
         return l10n.httpError400Desc;
       case 401:
@@ -63,12 +98,12 @@ class HttpErrorPage extends StatelessWidget {
       case 504:
         return l10n.httpError504Desc;
       default:
-        return l10n.httpErrorDefaultDesc(statusCode);
+        return l10n.httpErrorDefaultDesc(widget.statusCode);
     }
   }
 
   IconData _getErrorIcon() {
-    switch (statusCode) {
+    switch (widget.statusCode) {
       case 404:
         return Icons.search_off;
       case 401:
@@ -85,7 +120,7 @@ class HttpErrorPage extends StatelessWidget {
   }
 
   Color _getErrorColor() {
-    switch (statusCode) {
+    switch (widget.statusCode) {
       case 401:
       case 403:
         return Colors.orange;
@@ -137,7 +172,7 @@ class HttpErrorPage extends StatelessWidget {
                     border: Border.all(color: _getErrorColor(), width: 2),
                   ),
                   child: Text(
-                    'HTTP $statusCode',
+                    'HTTP ${widget.statusCode}',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -198,7 +233,7 @@ class HttpErrorPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       SelectableText(
-                        url,
+                        widget.url,
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey.shade800,
@@ -210,7 +245,7 @@ class HttpErrorPage extends StatelessWidget {
                 ),
                 
                 // Server message (if available)
-                if (serverMessage != null && serverMessage!.isNotEmpty) ...[
+                if (widget.serverMessage != null && widget.serverMessage!.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -238,7 +273,7 @@ class HttpErrorPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         SelectableText(
-                          serverMessage!,
+                          widget.serverMessage!,
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.red.shade900,
@@ -265,11 +300,11 @@ class HttpErrorPage extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (onRetry != null) ...[
+                          if (widget.onRetry != null) ...[
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 32),
                               child: ElevatedButton.icon(
-                                onPressed: onRetry,
+                                onPressed: widget.onRetry,
                                 icon: const Icon(Icons.refresh),
                                 label: Text(l10n.retryButton),
                                 style: ElevatedButton.styleFrom(
@@ -281,11 +316,11 @@ class HttpErrorPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 12),
                           ],
-                          if (onReload != null) ...[
+                          if (widget.onReload != null) ...[
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 32),
                               child: OutlinedButton.icon(
-                                onPressed: onReload,
+                                onPressed: widget.onReload,
                                 icon: const Icon(Icons.restart_alt),
                                 label: Text(l10n.reloadButton),
                                 style: OutlinedButton.styleFrom(
@@ -296,11 +331,11 @@ class HttpErrorPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 12),
                           ],
-                          if (onExit != null)
+                          if (widget.onExit != null)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 32),
                               child: ElevatedButton.icon(
-                                onPressed: onExit,
+                                onPressed: widget.onExit,
                                 icon: const Icon(Icons.home),
                                 label: Text(l10n.quit),
                                 style: ElevatedButton.styleFrom(
@@ -317,9 +352,9 @@ class HttpErrorPage extends StatelessWidget {
                       return Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          if (onRetry != null) ...[
+                          if (widget.onRetry != null) ...[
                             ElevatedButton.icon(
-                              onPressed: onRetry,
+                              onPressed: widget.onRetry,
                               icon: const Icon(Icons.refresh),
                               label: Text(l10n.retryButton),
                               style: ElevatedButton.styleFrom(
@@ -330,9 +365,9 @@ class HttpErrorPage extends StatelessWidget {
                             ),
                             const SizedBox(width: 16),
                           ],
-                          if (onReload != null) ...[
+                          if (widget.onReload != null) ...[
                             OutlinedButton.icon(
-                              onPressed: onReload,
+                              onPressed: widget.onReload,
                               icon: const Icon(Icons.restart_alt),
                               label: Text(l10n.reloadButton),
                               style: OutlinedButton.styleFrom(
@@ -342,9 +377,9 @@ class HttpErrorPage extends StatelessWidget {
                             ),
                             const SizedBox(width: 16),
                           ],
-                          if (onExit != null)
+                          if (widget.onExit != null)
                             ElevatedButton.icon(
-                              onPressed: onExit,
+                              onPressed: widget.onExit,
                               icon: const Icon(Icons.home),
                               label: Text(l10n.quit),
                               style: ElevatedButton.styleFrom(

@@ -1,7 +1,7 @@
 name: devicegate
 description: A Flutter web kiosk builder application
 publish_to: 'none'
-version: 1.0.1+11
+version: 1.0.1+12
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
