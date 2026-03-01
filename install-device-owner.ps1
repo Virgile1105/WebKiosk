@@ -67,16 +67,6 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "    Skipped (not needed or app will auto-grant)" -ForegroundColor Gray
 }
 
-# Grant WRITE_SECURE_SETTINGS for screen timeout control
-Write-Host "  - WRITE_SECURE_SETTINGS..." -ForegroundColor White
-adb shell pm grant com.devicegate.app android.permission.WRITE_SECURE_SETTINGS
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "    Warning: Failed to grant. App will auto-grant on first launch." -ForegroundColor Yellow
-} else {
-    Write-Host "    Granted!" -ForegroundColor Green
-}
-
 # Launch the app
 Write-Host ""
 Write-Host "Launching DeviceGate..." -ForegroundColor Yellow

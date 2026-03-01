@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:devicegate/models/device_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/logger.dart';
@@ -7,13 +8,8 @@ import '../services/bluetooth_service.dart';
 import 'error_page.dart';
 
 class InfoScreen extends StatefulWidget {
-  final String appVersion;
-  final String deviceName;
-
   const InfoScreen({
     super.key,
-    required this.appVersion,
-    required this.deviceName,
   });
 
   @override
@@ -30,6 +26,8 @@ class _InfoScreenState extends State<InfoScreen> {
   String? _serialNumber;
   String? _androidVersion;
   String? _securityPatch;
+  String? _appVersion;
+  String? _appDeviceName;
   bool _isLoadingBluetooth = true;
 
   @override
@@ -93,40 +91,19 @@ class _InfoScreenState extends State<InfoScreen> {
         log('Error getting Bluetooth devices: $e');
       }
 
-      // Get Android device model and product name
-      String? androidDeviceModel;
-      String? productName;
-      String? serialNumber;
-      String? androidVersion;
-      String? securityPatch;
-      try {
-        final deviceModel = await platform.invokeMethod('getDeviceModel');
-        if (deviceModel != null && deviceModel is Map) {
-          final manufacturer = deviceModel['manufacturer'] ?? '';
-          final model = deviceModel['model'] ?? '';
-          final deviceName = deviceModel['deviceName'] ?? '';
-          final serial = deviceModel['serialNumber'] ?? '';
-          final version = deviceModel['androidVersion'] ?? '';
-          final patch = deviceModel['securityPatch'] ?? '';
-          androidDeviceModel = '$manufacturer $model'.trim();
-          productName = deviceName.isNotEmpty ? deviceName : null;
-          serialNumber = serial.isNotEmpty ? serial : null;
-          androidVersion = version.isNotEmpty ? version : null;
-          securityPatch = patch.isNotEmpty ? patch : null;
-        }
-      } catch (e) {
-        log('Error getting device model: $e');
-      }
-
+      // Use DeviceInfo singleton for device info
+      final deviceInfo = DeviceInfo();
       if (mounted) {
         setState(() {
           _ipAddress = ipAddress;
           _bluetoothDevices = bluetoothDevices;
-          _productName = productName;
-          _androidDeviceModel = androidDeviceModel;
-          _serialNumber = serialNumber;
-          _androidVersion = androidVersion;
-          _securityPatch = securityPatch;
+          _productName = deviceInfo.deviceName.isNotEmpty ? deviceInfo.deviceName : null;
+          _androidDeviceModel = deviceInfo.productName.isNotEmpty ? deviceInfo.productName : null;
+          _serialNumber = deviceInfo.serialNumber.isNotEmpty ? deviceInfo.serialNumber : null;
+          _androidVersion = deviceInfo.androidVersion.isNotEmpty ? deviceInfo.androidVersion : null;
+          _securityPatch = deviceInfo.securityPatch.isNotEmpty ? deviceInfo.securityPatch : null;
+          _appVersion = deviceInfo.appVersion.isNotEmpty ? deviceInfo.appVersion : null;
+          _appDeviceName = deviceInfo.appDeviceName.isNotEmpty ? deviceInfo.appDeviceName : null;
           _isLoadingBluetooth = false;
         });
       }
@@ -230,9 +207,9 @@ class _InfoScreenState extends State<InfoScreen> {
             ),
             const SizedBox(height: 16),
             // Info rows
-            _buildInfoRow(l10n.appVersion, widget.appVersion.isNotEmpty ? widget.appVersion : l10n.loadingApps),
+            _buildInfoRow(l10n.appVersion, _appVersion ??  l10n.loadingApps),
             const Divider(height: 1, indent: 16, endIndent: 16),
-            _buildInfoRow(l10n.deviceName, widget.deviceName),
+            _buildInfoRow(l10n.deviceName, _appDeviceName ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),
             _buildInfoRow(l10n.productName, _productName ?? l10n.notAvailable),
             const Divider(height: 1, indent: 16, endIndent: 16),

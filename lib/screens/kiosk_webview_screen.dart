@@ -1,3 +1,4 @@
+import 'package:devicegate/services/firebaseDataManagement.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'dart:async';
@@ -16,6 +17,7 @@ import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
 import 'error_page.dart';
 import 'http_error_page.dart';
+import 'sap_error_page.dart';
 
 class KioskWebViewScreen extends StatefulWidget {
   final String initialUrl;
@@ -25,6 +27,7 @@ class KioskWebViewScreen extends StatefulWidget {
   final bool enableWarningSound;
   final String? shortcutIconUrl;
   final String? shortcutName;
+  
 
   const KioskWebViewScreen({
     super.key,
@@ -67,6 +70,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   Orientation? _previousOrientation; // Track previous orientation for reset on rotation
   late AudioPlayer _audioPlayer;
   bool _hasError = false; // Track if there's a webview error
+  bool isYetNetworkIssueSendToFirestore=false; // Track if we've already sent a network issue to Firestore to prevent duplicates
   String _errorDescription = ''; // Store the error description
   Map<String, dynamic>? _wifiInfo; // Store WiFi information for error page
   Map<String, dynamic>? _websiteStatus; // Store live website connection status
@@ -358,9 +362,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   }
 
   Future<void> _fetchWifiInfo() async {
-    // Debounce: don't fetch WiFi info more than once every 5 seconds (permission is now cached, so this is just for performance)
+    // Debounce: don't fetch WiFi info more than once every 2 seconds for responsive UI updates
     final now = DateTime.now();
-    if (_lastWifiInfoFetch != null && now.difference(_lastWifiInfoFetch!).inSeconds < 5) {
+    if (_lastWifiInfoFetch != null && now.difference(_lastWifiInfoFetch!).inSeconds < 2) {
       log('_fetchWifiInfo skipped - called too recently (${now.difference(_lastWifiInfoFetch!).inSeconds}s ago)');
       return;
     }
@@ -380,6 +384,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         });
       }
       log('Fetched WiFi info: $wifiInfo');
+
     } catch (e) {
       log('Error fetching WiFi info: $e');
       if (mounted) {
@@ -703,6 +708,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               if (_useCustomKeyboardRuntime) {
                 _setupCustomKeyboard();
               }
+              // Check for SAP error pages (server returns 500 with HTML content)
+              _checkForSapError(url);
             }
           },
           onPageStarted: (String url) {
@@ -750,10 +757,12 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
             // Ignore sub-resource errors (images, scripts, CSS, etc.)
             if (error.isForMainFrame == true && mounted && !_hasError) {
               // Only fetch WiFi info once when first entering error state
+             isYetNetworkIssueSendToFirestore=false; // Reset network issue flag for Firestore when a new error occurs
               _fetchWifiInfo();
               // Start periodic network check
               _startNetworkCheckTimer();
-              setState(() {
+
+              setState(() { 
                 _hasError = true;
                 _errorDescription = error.description ?? 'Unknown error';
                 _isLoading = false;
@@ -1149,6 +1158,140 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
     }
   }
 
+  /// Checks if the loaded page is a SAP error page and navigates to SapErrorPage if detected
+  Future<void> _checkForSapError(String url) async {
+    try {
+      // Run JavaScript to detect SAP error page patterns
+      final result = await _controller.runJavaScriptReturningResult('''
+        (function() {
+          // Check for SAP-specific indicators
+          var sapLogo = document.querySelector('img[alt*="SAP"]');
+          var sapCopyright = document.body.innerHTML.indexOf('SAP SE') !== -1;
+          
+          // SAP error page detection: Has SAP logo AND SAP copyright
+          var isSapError = sapLogo && sapCopyright;
+          
+          if (!isSapError) {
+            return JSON.stringify({ detected: false });
+          }
+          
+          // Extract error header text (e.g., "500 Internal Server Error")
+          var errorHeader = document.querySelector('.errorTextHeader');
+          var errorHeaderText = '';
+          if (errorHeader) {
+            var span = errorHeader.querySelector('span');
+            errorHeaderText = span ? span.textContent.trim() : errorHeader.textContent.trim();
+          }
+          
+          // Extract detail text (e.g., "System error")
+          var detailTextContent = '';
+          var detailElements = document.querySelectorAll('.detailText');
+          for (var i = 0; i < detailElements.length; i++) {
+            var el = detailElements[i];
+            var text = el.textContent.trim();
+            // Skip server time entries
+            if (text && text.indexOf('Server time:') === -1) {
+              if (detailTextContent) detailTextContent += ' | ';
+              detailTextContent += text;
+            }
+          }
+          
+          // Extract server time - try JS variables first (clean), then fall back to text parsing
+          var serverTime = '';
+          var scripts = document.querySelectorAll('script');
+          for (var k = 0; k < scripts.length; k++) {
+            var content = scripts[k].innerHTML;
+            var dMatch = content.match(/var d = "(\\d{8})"/);
+            var tMatch = content.match(/var t = "(\\d{6})"/);
+            if (dMatch && tMatch) {
+              var d = dMatch[1];
+              var t = tMatch[1];
+              serverTime = d.slice(0,4) + '-' + d.slice(4,6) + '-' + d.slice(6,8) + ' ' +
+                           t.slice(0,2) + ':' + t.slice(2,4) + ':' + t.slice(4,6);
+              break;
+            }
+          }
+          
+          // Fallback: try to extract from rendered text (use innerText to exclude script content)
+          if (!serverTime) {
+            for (var j = 0; j < detailElements.length; j++) {
+              var el2 = detailElements[j];
+              var text2 = (el2.innerText || el2.textContent || '').trim();
+              if (text2.indexOf('Server time:') !== -1) {
+                var parts = text2.split('Server time:');
+                if (parts.length > 1) {
+                  serverTime = parts[1].trim();
+                }
+              }
+            }
+          }
+          
+          return JSON.stringify({
+            detected: true,
+            errorHeader: errorHeaderText,
+            detailText: detailTextContent,
+            serverTime: serverTime
+          });
+        })()
+      ''');
+      
+      // Parse the result
+      String jsonStr = result.toString();
+      log('SAP error check result: $jsonStr');
+      
+      // Remove quotes if the result is a quoted string
+      if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+        jsonStr = jsonStr.substring(1, jsonStr.length - 1);
+        // Unescape the string
+        jsonStr = jsonStr.replaceAll(r'\"', '"').replaceAll(r'\\', r'\');
+      }
+      
+      final Map<String, dynamic> data = json.decode(jsonStr);
+      
+      if (data['detected'] == true && mounted) {
+        final errorHeader = data['errorHeader'] as String? ?? 'Server Error';
+        final detailText = data['detailText'] as String? ?? '';
+        final serverTime = data['serverTime'] as String? ?? '';
+        
+        log('SAP error detected: $errorHeader | Details: $detailText | Time: $serverTime');
+        
+        // Navigate to SAP error page (use push, not pushReplacement, so WebView stays in stack)
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => SapErrorPage(
+              errorHeader: errorHeader,
+              detailText: detailText,
+              serverTime: serverTime,
+              url: url,
+              onRetry: () {
+                Navigator.of(context).pop();
+                _controller.reload();
+              },
+              onReload: () {
+                Navigator.of(context).pop();
+                _controller.loadRequest(
+                  Uri.parse(widget.initialUrl),
+                  headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                  },
+                );
+              },
+              onExit: () {
+                // Pop SAP error page, then pop the WebView to go back to shortcut list
+                Navigator.of(context).pop();
+                Navigator.of(context).pop();
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      log('Error checking for SAP error: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1176,8 +1319,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           ),
           
           // Error overlay
-          if (_hasError)
-            Container(
+          if (_hasError)  
+              Builder(
+                builder: (context) {
+                  final l10n = AppLocalizations.of(context)!;
+                  return Container(
               color: Colors.white,
               child: SingleChildScrollView(
                 child: Padding(
@@ -1192,7 +1338,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'Impossible de charger la page web',
+                        l10n.cannotLoadPage,
                         style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -1202,7 +1348,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Le site web n\'a pas pu être atteint. Veuillez vérifier votre connexion Internet et réessayer.',
+                        l10n.websiteUnreachableDesc,
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey.shade600,
@@ -1213,7 +1359,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                       const SizedBox(height: 24),
                       // WiFi Information Section
                       if (_wifiInfo != null) ...[
-                        Container(
+                          Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade100,
@@ -1233,7 +1379,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                     if (_wifiInfo!['currentNetwork'] != null) ...[
                                       Builder(
                                         builder: (context) {
-                                          try {
+                                          try {   
                                             return _buildNetworkStatus(_wifiInfo!['currentNetwork']);
                                           } catch (e) {
                                             log('Error building network status: $e');
@@ -1246,7 +1392,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                     // Saved Networks
                                     if (_wifiInfo!['savedNetworks'] != null && (_wifiInfo!['savedNetworks'] as List).isNotEmpty) ...[
                                       Text(
-                                        'Réseaux enregistrés :',
+                                        l10n.savedNetworksLabel,
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
@@ -1264,7 +1410,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                       }),
                                     ] else if (_wifiInfo!['error'] != null) ...[
                                       Text(
-                                        'Erreur d\'accès WiFi :',
+                                        l10n.wifiAccessError,
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
@@ -1296,7 +1442,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           border: Border.all(color: Colors.amber.shade200),
                                         ),
                                         child: Text(
-                                          'Aucun réseau enregistré trouvé ou la liste des réseaux est vide.',
+                                          l10n.noSavedNetworksFound,
                                           style: TextStyle(
                                             fontSize: 13,
                                             color: Colors.amber.shade900,
@@ -1315,7 +1461,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     Text(
-                                      'État Internet',
+                                      l10n.internetStatus,
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w500,
@@ -1326,7 +1472,6 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                     Expanded(
                                       child: Builder(
                                         builder: (context) {
-                                          final l10n = AppLocalizations.of(context)!;
                                           // Get live website status check
                                           final websiteCanConnect = _websiteStatus?['canConnect'] == true;
                                           final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
@@ -1453,9 +1598,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                         ),
                         const SizedBox(height: 32),
                       ],
-                      Builder(
-                        builder: (context) {
-                          final l10n = AppLocalizations.of(context)!;
+                      // Action buttons - responsive layout based on screen dimensions
+                      LayoutBuilder(
+                        builder: (context, constraints) {
                           // Check if WiFi is connected
                           final hasWifiConnection = _wifiInfo?['currentNetwork'] != null;
                           // Check if Internet is OK
@@ -1467,65 +1612,139 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                           // Capture the resetting state in the Builder
                           final isResetting = _isResettingInternet;
                           
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ElevatedButton.icon(
-                                onPressed: buttonsEnabled ? _reloadPage : null,
-                                icon: const Icon(Icons.refresh),
-                                label: Text(l10n.retryButton),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                  backgroundColor: Colors.lightGreen,
-                                  disabledBackgroundColor: Colors.grey.shade300,
-                                  disabledForegroundColor: Colors.grey.shade600,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              OutlinedButton.icon(
-                                onPressed: buttonsEnabled ? _retryLoading : null,
-                                icon: const Icon(Icons.restart_alt),
-                                label: Text(l10n.reloadButton),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                  side: BorderSide(
-                                    color: buttonsEnabled ? Colors.blue.shade400 : Colors.grey.shade300, 
-                                    width: 2
+                          // Use screen width to determine layout
+                          // If width > 600, use horizontal layout (landscape or tablet)
+                          final useHorizontalLayout = constraints.maxWidth > 600 || 
+                                                      MediaQuery.of(context).size.width > MediaQuery.of(context).size.height;
+                          
+                          if (!useHorizontalLayout) {
+                            // Portrait/narrow: Stack buttons vertically
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                                  child: ElevatedButton.icon(
+                                    onPressed: buttonsEnabled ? _reloadPage : null,
+                                    icon: const Icon(Icons.refresh),
+                                    label: Text(l10n.retryButton),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                      backgroundColor: Colors.lightGreen,
+                                      disabledBackgroundColor: Colors.grey.shade300,
+                                      disabledForegroundColor: Colors.grey.shade600,
+                                    ),
                                   ),
-                                  disabledForegroundColor: Colors.grey.shade600,
                                 ),
-                              ),
-                              const SizedBox(width: 16),
-                              ElevatedButton.icon(
-                                onPressed: isResetting ? null : _resetInternet,
-                                icon: isResetting 
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                const SizedBox(height: 12),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                                  child: OutlinedButton.icon(
+                                    onPressed: buttonsEnabled ? _retryLoading : null,
+                                    icon: const Icon(Icons.restart_alt),
+                                    label: Text(l10n.reloadButton),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                      side: BorderSide(
+                                        color: buttonsEnabled ? Colors.blue.shade400 : Colors.grey.shade300, 
+                                        width: 2
                                       ),
-                                    )
-                                  : const Icon(Icons.wifi_off),
-                                label: Text(isResetting ? l10n.resettingInternet : l10n.resetInternet),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                  backgroundColor: Colors.orange,
-                                  foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.orange.shade300,
-                                  disabledForegroundColor: Colors.white,
+                                      disabledForegroundColor: Colors.grey.shade600,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          );
+                                const SizedBox(height: 12),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                                  child: ElevatedButton.icon(
+                                    onPressed: isResetting ? null : _resetInternet,
+                                    icon: isResetting 
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        )
+                                      : const Icon(Icons.wifi_off),
+                                    label: Text(isResetting ? l10n.resettingInternet : l10n.resetInternet),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                      backgroundColor: Colors.orange,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor: Colors.orange.shade300,
+                                      disabledForegroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          } else {
+                            // Landscape/wide: Show buttons in a row
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: buttonsEnabled ? _reloadPage : null,
+                                  icon: const Icon(Icons.refresh),
+                                  label: Text(l10n.retryButton),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    backgroundColor: Colors.lightGreen,
+                                    disabledBackgroundColor: Colors.grey.shade300,
+                                    disabledForegroundColor: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                OutlinedButton.icon(
+                                  onPressed: buttonsEnabled ? _retryLoading : null,
+                                  icon: const Icon(Icons.restart_alt),
+                                  label: Text(l10n.reloadButton),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    side: BorderSide(
+                                      color: buttonsEnabled ? Colors.blue.shade400 : Colors.grey.shade300, 
+                                      width: 2
+                                    ),
+                                    disabledForegroundColor: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                ElevatedButton.icon(
+                                  onPressed: isResetting ? null : _resetInternet,
+                                  icon: isResetting 
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      )
+                                    : const Icon(Icons.wifi_off),
+                                  label: Text(isResetting ? l10n.resettingInternet : l10n.resetInternet),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                    backgroundColor: Colors.orange,
+                                    foregroundColor: Colors.white,
+                                    disabledBackgroundColor: Colors.orange.shade300,
+                                    disabledForegroundColor: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
                         },
                       ),
                     ],
                   ),
                 ),
               ),
-            ),
+            );
+                },
+              ),
           
           // Loading indicator with fade animation
           Positioned(
@@ -1873,14 +2092,6 @@ Widget _buildSavedNetworkItem(dynamic network) {
                       },
                     ),
                     _buildMenuTile(
-                      icon: Icons.exit_to_app,
-                      title: l10n.quit,
-                      onTap: () {
-                        Navigator.pop(context); // Close drawer
-                        Navigator.of(context).pop(); // Return to home screen
-                      },
-                    ),
-                    _buildMenuTile(
                       icon: Icons.settings,
                       title: l10n.settings,
                       onTap: () async {
@@ -1898,6 +2109,15 @@ Widget _buildSavedNetworkItem(dynamic network) {
                         }
                       },
                     ),
+                    _buildMenuTile(
+                      icon: Icons.exit_to_app,
+                      title: l10n.quit,
+                      onTap: () {
+                        Navigator.pop(context); // Close drawer
+                        Navigator.of(context).pop(); // Return to home screen
+                      },
+                    ),
+
                   ],
                 ),
               ),
@@ -2129,6 +2349,33 @@ Widget _buildSavedNetworkItem(dynamic network) {
           if (status is Map) {
             _websiteStatus = Map<String, dynamic>.from(status);
             log('Website status: canConnect=${_websiteStatus?['canConnect']}, isSuccess=${_websiteStatus?['isSuccess']}, error=${_websiteStatus?['error']}');
+            
+            // Send network issue to Firestore once both WiFi and website status are available
+            if (!isYetNetworkIssueSendToFirestore && _wifiInfo != null) {
+              // Normalize WiFi status to "up" or "down"
+              // When WiFi is connected, Android returns SSID/signalStrength but no "status" field
+              // When disconnected, status is explicitly "disconnected"
+              final currentNetwork = _wifiInfo?['currentNetwork'];
+              final wifiStatus = currentNetwork?['status']?.toString();
+              final hasSignal = currentNetwork?['signalStrength'] != null;
+              final hasSsid = currentNetwork?['ssid'] != null && currentNetwork?['ssid'] != 'Unknown';
+              // WiFi is "up" if we have signal/SSID and status is NOT "disconnected"
+              final normalizedWifiStatus = (hasSignal || hasSsid) && wifiStatus != 'disconnected' ? 'up' : 'down';
+              
+              // Normalize internet status to "up" or "down"
+              final canConnect = _websiteStatus?['canConnect'] == true;
+              final normalizedInternetStatus = canConnect ? 'up' : 'down';
+              
+              FirebaseDataManagement.writeNetworkIssue(
+                networkWiFiName: _wifiInfo?['currentNetwork']?['ssid']?.toString() ?? '',
+                networkWiFiStatus: normalizedWifiStatus,
+                networSignalStrength: _wifiInfo?['currentNetwork']?['signalStrength']?.toString() ?? '',
+                internetStatus: normalizedInternetStatus,
+                errorDescription: _errorDescription,
+                context: context,
+              );
+              isYetNetworkIssueSendToFirestore = true;
+            }
           }
         });
       }

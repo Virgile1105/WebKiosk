@@ -1,3 +1,4 @@
+import 'package:devicegate/models/device_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -24,31 +25,21 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const platform = MethodChannel('devicegate.app/shortcut');
-  String _appVersion = '';
-  String _deviceName = 'DeviceGate';
+    String _deviceName = DeviceInfo().appDeviceName.isNotEmpty ? DeviceInfo().appDeviceName : 'DeviceGate';
 
   @override
   void initState() {
     super.initState();
-    _loadAppVersion();
-    _loadDeviceName();
+
   }
 
-  Future<void> _loadDeviceName() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _deviceName = prefs.getString('device_name') ?? 'DeviceGate';
-      });
-    } catch (e) {
-      log('Error loading device name: $e');
-    }
-  }
+
 
   Future<void> _saveDeviceName(String name) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('device_name', name);
+      DeviceInfo().appDeviceName = name;
       setState(() {
         _deviceName = name;
       });
@@ -148,19 +139,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _loadAppVersion() async {
-    try {
-      final packageInfo = await PackageInfo.fromPlatform();
-      setState(() {
-        _appVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
-      });
-    } catch (e) {
-      log('Error fetching app version: $e');
-      setState(() {
-        _appVersion = 'Unknown';
-      });
-    }
-  }
 
   void _exitToHome() async {
     try {
@@ -226,10 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => InfoScreen(
-                          appVersion: _appVersion,
-                          deviceName: _deviceName,
-                        ),
+                        builder: (context) => InfoScreen(),
                       ),
                     );
                   },

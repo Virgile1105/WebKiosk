@@ -344,63 +344,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get couldNotSaveTopBarSetting => 'Could not save top bar setting';
 
   @override
-  String get couldNotSaveAutoRotationSetting =>
-      'Could not save auto-rotation setting';
-
-  @override
-  String get couldNotSaveScreenTimeout =>
-      'Could not save screen timeout setting';
-
-  @override
-  String get screenTimeout => 'Screen Timeout';
-
-  @override
-  String get never => 'Never';
-
-  @override
-  String get seconds => 'seconds';
-
-  @override
-  String get second => 'second';
-
-  @override
-  String get minutes => 'minutes';
-
-  @override
-  String get minute => 'minute';
-
-  @override
-  String get hours => 'hours';
-
-  @override
-  String get hour => 'hour';
-
-  @override
-  String get current => 'current';
-
-  @override
-  String get currentSystemValue => 'Current system value';
-
-  @override
   String get alwaysShowTopBar => 'Always Show Top Bar';
 
   @override
   String get alwaysShowTopBarDesc => 'Keep navigation bar visible at all times';
-
-  @override
-  String get autoRotation => 'Auto Rotation';
-
-  @override
-  String get autoRotationDesc => 'Allow screen rotation';
-
-  @override
-  String get lockOrientation => 'Lock Orientation';
-
-  @override
-  String get portrait => 'Portrait';
-
-  @override
-  String get landscape => 'Landscape';
 
   @override
   String get customDisplaySettings => 'Custom display settings';
@@ -413,44 +360,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get topBarHiddenDesc => 'Status bar is hidden (swipe down to show)';
-
-  @override
-  String get screenRotatesAutomatically =>
-      'Screen rotates automatically based on orientation';
-
-  @override
-  String lockedIn(Object orientation) {
-    return 'Locked in $orientation';
-  }
-
-  @override
-  String currently(Object value) {
-    return 'Currently: $value';
-  }
-
-  @override
-  String get cancelButton => 'Cancel';
-
-  @override
-  String get fifteenSeconds => '15 seconds';
-
-  @override
-  String get thirtySeconds => '30 seconds';
-
-  @override
-  String get oneMinute => '1 minute';
-
-  @override
-  String get twoMinutes => '2 minutes';
-
-  @override
-  String get fiveMinutes => '5 minutes';
-
-  @override
-  String get tenMinutes => '10 minutes';
-
-  @override
-  String get thirtyMinutes => '30 minutes';
 
   @override
   String get passwordProtection => 'Password Protection';
@@ -535,10 +444,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get savedNetworks => 'Saved Networks';
 
   @override
+  String get savedNetworksLabel => 'Saved networks:';
+
+  @override
   String get forget => 'Forget';
 
   @override
   String get connect => 'Connect';
+
+  @override
+  String get cannotLoadPage => 'Cannot load the web page';
+
+  @override
+  String get websiteUnreachableDesc =>
+      'The website could not be reached. Please check your internet connection and try again.';
+
+  @override
+  String get wifiAccessError => 'WiFi access error:';
+
+  @override
+  String get noSavedNetworksFound =>
+      'No saved network found or the network list is empty.';
 
   @override
   String get initializationError => 'Initialization Error';
@@ -688,6 +614,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get serverMessage => 'Server message:';
+
+  @override
+  String get sapServerError => 'SAP Server Error';
+
+  @override
+  String get errorDetails => 'Error details:';
+
+  @override
+  String get serverTime => 'Server time:';
 
   @override
   String get retryButton => 'Retry';

@@ -746,78 +746,6 @@ abstract class AppLocalizations {
   /// **'Could not save top bar setting'**
   String get couldNotSaveTopBarSetting;
 
-  /// No description provided for @couldNotSaveAutoRotationSetting.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not save auto-rotation setting'**
-  String get couldNotSaveAutoRotationSetting;
-
-  /// No description provided for @couldNotSaveScreenTimeout.
-  ///
-  /// In en, this message translates to:
-  /// **'Could not save screen timeout setting'**
-  String get couldNotSaveScreenTimeout;
-
-  /// No description provided for @screenTimeout.
-  ///
-  /// In en, this message translates to:
-  /// **'Screen Timeout'**
-  String get screenTimeout;
-
-  /// No description provided for @never.
-  ///
-  /// In en, this message translates to:
-  /// **'Never'**
-  String get never;
-
-  /// No description provided for @seconds.
-  ///
-  /// In en, this message translates to:
-  /// **'seconds'**
-  String get seconds;
-
-  /// No description provided for @second.
-  ///
-  /// In en, this message translates to:
-  /// **'second'**
-  String get second;
-
-  /// No description provided for @minutes.
-  ///
-  /// In en, this message translates to:
-  /// **'minutes'**
-  String get minutes;
-
-  /// No description provided for @minute.
-  ///
-  /// In en, this message translates to:
-  /// **'minute'**
-  String get minute;
-
-  /// No description provided for @hours.
-  ///
-  /// In en, this message translates to:
-  /// **'hours'**
-  String get hours;
-
-  /// No description provided for @hour.
-  ///
-  /// In en, this message translates to:
-  /// **'hour'**
-  String get hour;
-
-  /// No description provided for @current.
-  ///
-  /// In en, this message translates to:
-  /// **'current'**
-  String get current;
-
-  /// No description provided for @currentSystemValue.
-  ///
-  /// In en, this message translates to:
-  /// **'Current system value'**
-  String get currentSystemValue;
-
   /// No description provided for @alwaysShowTopBar.
   ///
   /// In en, this message translates to:
@@ -829,36 +757,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep navigation bar visible at all times'**
   String get alwaysShowTopBarDesc;
-
-  /// No description provided for @autoRotation.
-  ///
-  /// In en, this message translates to:
-  /// **'Auto Rotation'**
-  String get autoRotation;
-
-  /// No description provided for @autoRotationDesc.
-  ///
-  /// In en, this message translates to:
-  /// **'Allow screen rotation'**
-  String get autoRotationDesc;
-
-  /// No description provided for @lockOrientation.
-  ///
-  /// In en, this message translates to:
-  /// **'Lock Orientation'**
-  String get lockOrientation;
-
-  /// No description provided for @portrait.
-  ///
-  /// In en, this message translates to:
-  /// **'Portrait'**
-  String get portrait;
-
-  /// No description provided for @landscape.
-  ///
-  /// In en, this message translates to:
-  /// **'Landscape'**
-  String get landscape;
 
   /// No description provided for @customDisplaySettings.
   ///
@@ -883,72 +781,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Status bar is hidden (swipe down to show)'**
   String get topBarHiddenDesc;
-
-  /// No description provided for @screenRotatesAutomatically.
-  ///
-  /// In en, this message translates to:
-  /// **'Screen rotates automatically based on orientation'**
-  String get screenRotatesAutomatically;
-
-  /// No description provided for @lockedIn.
-  ///
-  /// In en, this message translates to:
-  /// **'Locked in {orientation}'**
-  String lockedIn(Object orientation);
-
-  /// No description provided for @currently.
-  ///
-  /// In en, this message translates to:
-  /// **'Currently: {value}'**
-  String currently(Object value);
-
-  /// No description provided for @cancelButton.
-  ///
-  /// In en, this message translates to:
-  /// **'Cancel'**
-  String get cancelButton;
-
-  /// No description provided for @fifteenSeconds.
-  ///
-  /// In en, this message translates to:
-  /// **'15 seconds'**
-  String get fifteenSeconds;
-
-  /// No description provided for @thirtySeconds.
-  ///
-  /// In en, this message translates to:
-  /// **'30 seconds'**
-  String get thirtySeconds;
-
-  /// No description provided for @oneMinute.
-  ///
-  /// In en, this message translates to:
-  /// **'1 minute'**
-  String get oneMinute;
-
-  /// No description provided for @twoMinutes.
-  ///
-  /// In en, this message translates to:
-  /// **'2 minutes'**
-  String get twoMinutes;
-
-  /// No description provided for @fiveMinutes.
-  ///
-  /// In en, this message translates to:
-  /// **'5 minutes'**
-  String get fiveMinutes;
-
-  /// No description provided for @tenMinutes.
-  ///
-  /// In en, this message translates to:
-  /// **'10 minutes'**
-  String get tenMinutes;
-
-  /// No description provided for @thirtyMinutes.
-  ///
-  /// In en, this message translates to:
-  /// **'30 minutes'**
-  String get thirtyMinutes;
 
   /// No description provided for @passwordProtection.
   ///
@@ -1106,6 +938,12 @@ abstract class AppLocalizations {
   /// **'Saved Networks'**
   String get savedNetworks;
 
+  /// No description provided for @savedNetworksLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved networks:'**
+  String get savedNetworksLabel;
+
   /// No description provided for @forget.
   ///
   /// In en, this message translates to:
@@ -1117,6 +955,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect'**
   String get connect;
+
+  /// No description provided for @cannotLoadPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Cannot load the web page'**
+  String get cannotLoadPage;
+
+  /// No description provided for @websiteUnreachableDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'The website could not be reached. Please check your internet connection and try again.'**
+  String get websiteUnreachableDesc;
+
+  /// No description provided for @wifiAccessError.
+  ///
+  /// In en, this message translates to:
+  /// **'WiFi access error:'**
+  String get wifiAccessError;
+
+  /// No description provided for @noSavedNetworksFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved network found or the network list is empty.'**
+  String get noSavedNetworksFound;
 
   /// No description provided for @initializationError.
   ///
@@ -1381,6 +1243,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Server message:'**
   String get serverMessage;
+
+  /// No description provided for @sapServerError.
+  ///
+  /// In en, this message translates to:
+  /// **'SAP Server Error'**
+  String get sapServerError;
+
+  /// No description provided for @errorDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Error details:'**
+  String get errorDetails;
+
+  /// No description provided for @serverTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Server time:'**
+  String get serverTime;
 
   /// No description provided for @retryButton.
   ///

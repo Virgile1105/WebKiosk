@@ -140,18 +140,6 @@ class MainActivity : FlutterActivity() {
                 Log.e(TAG, "Error auto-granting READ_PHONE_STATE permission", e)
             }
             
-            // Auto-grant WRITE_SECURE_SETTINGS for screen timeout control
-            try {
-                if (!hasPermission(Manifest.permission.WRITE_SECURE_SETTINGS)) {
-                    val granted = grantPermissionViaShell(Manifest.permission.WRITE_SECURE_SETTINGS)
-                    Log.i(TAG, "WRITE_SECURE_SETTINGS permission auto-granted on startup: $granted")
-                } else {
-                    Log.d(TAG, "WRITE_SECURE_SETTINGS permission already granted")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error auto-granting WRITE_SECURE_SETTINGS permission", e)
-            }
-            
             // Auto-grant location permissions (Allow all the time + Use precise location)
             try {
                 val admin = adminComponent
@@ -520,53 +508,6 @@ class MainActivity : FlutterActivity() {
                         result.error("SYSTEM_UI_ERROR", e.message, null)
                     }
                 }
-                "setScreenTimeout" -> {
-                    try {
-                        val timeout = call.argument<Int>("timeout") ?: 60000
-                        val success = setScreenTimeout(timeout)
-                        result.success(success)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error setting screen timeout", e)
-                        result.error("SCREEN_TIMEOUT_ERROR", e.message, null)
-                    }
-                }
-                "getScreenTimeout" -> {
-                    try {
-                        val timeout = getScreenTimeout()
-                        result.success(timeout)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error getting screen timeout", e)
-                        result.error("SCREEN_TIMEOUT_ERROR", e.message, null)
-                    }
-                }
-                "setScreenOrientation" -> {
-                    try {
-                        val autoRotation = call.argument<Boolean>("autoRotation") ?: true
-                        setScreenOrientation(autoRotation)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error setting screen orientation", e)
-                        result.error("SCREEN_ORIENTATION_ERROR", e.message, null)
-                    }
-                }
-                "getLockedOrientation" -> {
-                    try {
-                        val orientation = getLockedOrientation()
-                        result.success(orientation)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error getting locked orientation", e)
-                        result.error("SCREEN_ORIENTATION_ERROR", e.message, null)
-                    }
-                }
-                "getAutoRotation" -> {
-                    try {
-                        val autoRotation = getAutoRotation()
-                        result.success(autoRotation)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error getting auto-rotation setting", e)
-                        result.error("SCREEN_ORIENTATION_ERROR", e.message, null)
-                    }
-                }
                 "getDeviceModel" -> {
                     try {
                         val deviceModel = getDeviceModel()
@@ -826,9 +767,6 @@ class MainActivity : FlutterActivity() {
         
         // Reapply system UI mode to maintain status bar transparency
         reapplySystemUiMode()
-        
-        // Reapply screen orientation setting
-        reapplyScreenOrientation()
     }
     
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -836,9 +774,6 @@ class MainActivity : FlutterActivity() {
         if (hasFocus) {
             // Reapply system UI mode when window gains focus
             reapplySystemUiMode()
-            
-            // Reapply screen orientation setting
-            reapplyScreenOrientation()
         }
     }
     
@@ -853,34 +788,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun reapplyScreenOrientation() {
-        try {
-            // Read from Android system settings instead of SharedPreferences
-            val autoRotation = getAutoRotation()
-            Log.i(TAG, "Reapplying screen orientation from system setting: autoRotation=$autoRotation")
-            
-            // Apply orientation to activity
-            if (autoRotation) {
-                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
-            } else {
-                // Read locked orientation from USER_ROTATION
-                val userRotation = Settings.System.getInt(
-                    contentResolver,
-                    Settings.System.USER_ROTATION,
-                    android.view.Surface.ROTATION_90 // Default: landscape
-                )
-                
-                requestedOrientation = if (userRotation == android.view.Surface.ROTATION_90 || userRotation == android.view.Surface.ROTATION_270) {
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                } else {
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reapplying screen orientation", e)
-        }
-    }
-    
     private fun setAsDefaultHome() {
         try {
             initDevicePolicyManager()
@@ -3291,152 +3198,6 @@ class MainActivity : FlutterActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error applying system UI mode", e)
-        }
-    }
-
-    private fun setScreenTimeout(timeout: Int): Boolean {
-        try {
-            // Use timeout value as-is (no longer converting -1 to Integer.MAX_VALUE)
-            val timeoutValue = timeout
-            
-            // Set screen timeout directly using Settings.System
-            // This works because we have WRITE_SECURE_SETTINGS permission as Device Owner
-            val result = Settings.System.putInt(
-                contentResolver,
-                Settings.System.SCREEN_OFF_TIMEOUT,
-                timeoutValue
-            )
-            
-            if (result) {
-                Log.i(TAG, "Screen timeout successfully set to: $timeout ms")
-            } else {
-                Log.e(TAG, "Failed to set screen timeout - putInt returned false")
-            }
-            
-            return result
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException setting screen timeout - missing WRITE_SECURE_SETTINGS permission?", e)
-            return false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting screen timeout", e)
-            return false
-        }
-    }
-
-    private fun getScreenTimeout(): Int {
-        try {
-            // Get current screen timeout from system settings
-            val timeoutValue = Settings.System.getInt(
-                contentResolver,
-                Settings.System.SCREEN_OFF_TIMEOUT,
-                60000 // Default: 1 minute
-            )
-            
-            // Return timeout value as-is (no conversion needed)
-            Log.i(TAG, "Current screen timeout: $timeoutValue ms")
-            return timeoutValue
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting screen timeout", e)
-            return 60000 // Default: 1 minute
-        }
-    }
-
-    private fun setScreenOrientation(autoRotation: Boolean) {
-        try {
-            // Set Android system auto-rotation setting
-            val result = Settings.System.putInt(
-                contentResolver,
-                Settings.System.ACCELEROMETER_ROTATION,
-                if (autoRotation) 1 else 0
-            )
-            
-            if (result) {
-                if (autoRotation) {
-                    // Enable auto-rotation - let activity follow sensor
-                    requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
-                    Log.i(TAG, "Auto-rotation ENABLED in system settings and activity")
-                } else {
-                    // Disable auto-rotation - lock to current orientation
-                    val currentOrientation = resources.configuration.orientation
-                    
-                    if (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-                        // Lock to landscape
-                        Settings.System.putInt(
-                            contentResolver,
-                            Settings.System.USER_ROTATION,
-                            android.view.Surface.ROTATION_90 // Landscape
-                        )
-                        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                        Log.i(TAG, "Auto-rotation DISABLED in system settings, locked to LANDSCAPE")
-                    } else {
-                        // Lock to portrait
-                        Settings.System.putInt(
-                            contentResolver,
-                            Settings.System.USER_ROTATION,
-                            android.view.Surface.ROTATION_0 // Portrait
-                        )
-                        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                        Log.i(TAG, "Auto-rotation DISABLED in system settings, locked to PORTRAIT")
-                    }
-                }
-            } else {
-                Log.e(TAG, "Failed to set auto-rotation setting - putInt returned false")
-            }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "SecurityException setting auto-rotation - missing WRITE_SETTINGS permission?", e)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting screen orientation", e)
-        }
-    }
-
-    private fun getAutoRotation(): Boolean {
-        try {
-            // Read Android system auto-rotation setting
-            val autoRotationValue = Settings.System.getInt(
-                contentResolver,
-                Settings.System.ACCELEROMETER_ROTATION,
-                1 // Default: enabled
-            )
-            
-            val autoRotation = autoRotationValue == 1
-            Log.i(TAG, "Current auto-rotation setting: ${if (autoRotation) "ENABLED" else "DISABLED"}")
-            return autoRotation
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting auto-rotation setting", e)
-            return true // Default: enabled
-        }
-    }
-
-    private fun getLockedOrientation(): String {
-        try {
-            val autoRotation = getAutoRotation()
-            
-            if (autoRotation) {
-                // Auto-rotation enabled, return current orientation
-                val currentOrientation = resources.configuration.orientation
-                return if (currentOrientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-                    "landscape"
-                } else {
-                    "portrait"
-                }
-            } else {
-                // Auto-rotation disabled, read USER_ROTATION setting
-                val userRotation = Settings.System.getInt(
-                    contentResolver,
-                    Settings.System.USER_ROTATION,
-                    android.view.Surface.ROTATION_90 // Default: landscape
-                )
-                
-                // ROTATION_0 or ROTATION_180 = portrait, ROTATION_90 or ROTATION_270 = landscape
-                return if (userRotation == android.view.Surface.ROTATION_90 || userRotation == android.view.Surface.ROTATION_270) {
-                    "landscape"
-                } else {
-                    "portrait"
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting locked orientation", e)
-            return "landscape"
         }
     }
     

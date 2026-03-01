@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "27152210285",
+    "project_id": "devicegate-6d587",
+    "storage_bucket": "devicegate-6d587.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:27152210285:android:38261a94a3c601eb636264",
+        "android_client_info": {
+          "package_name": "com.devicegate.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA99Gy-gaO-l0lgEtnDwElQEU9NGIWasGA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

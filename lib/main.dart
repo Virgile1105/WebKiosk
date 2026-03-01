@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'package:devicegate/models/device_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'screens/shortcut_list_screen.dart';
 import 'screens/kiosk_webview_screen.dart';
 import 'screens/error_page.dart';
@@ -69,6 +71,12 @@ void main() async {
   runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
     
+    // Initialize Firebase
+    await Firebase.initializeApp();
+
+    // Load device info once at startup
+    await DeviceInfo().loadFromPlatform();
+
     // Initialize Bluetooth service singleton
     BluetoothService().initialize();
     

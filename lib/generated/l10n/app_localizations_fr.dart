@@ -358,64 +358,11 @@ class AppLocalizationsFr extends AppLocalizations {
       'Impossible de sauvegarder le paramètre de la barre supérieure';
 
   @override
-  String get couldNotSaveAutoRotationSetting =>
-      'Impossible de sauvegarder le paramètre de rotation automatique';
-
-  @override
-  String get couldNotSaveScreenTimeout =>
-      'Impossible de sauvegarder le délai de mise en veille de l\'écran';
-
-  @override
-  String get screenTimeout => 'Mise en veille de l\'écran';
-
-  @override
-  String get never => 'Jamais';
-
-  @override
-  String get seconds => 'secondes';
-
-  @override
-  String get second => 'seconde';
-
-  @override
-  String get minutes => 'minutes';
-
-  @override
-  String get minute => 'minute';
-
-  @override
-  String get hours => 'heures';
-
-  @override
-  String get hour => 'heure';
-
-  @override
-  String get current => 'actuel';
-
-  @override
-  String get currentSystemValue => 'Valeur système actuelle';
-
-  @override
   String get alwaysShowTopBar => 'Toujours afficher la barre supérieure';
 
   @override
   String get alwaysShowTopBarDesc =>
       'Garder la barre de navigation visible en permanence';
-
-  @override
-  String get autoRotation => 'Rotation automatique';
-
-  @override
-  String get autoRotationDesc => 'Autoriser la rotation de l\'écran';
-
-  @override
-  String get lockOrientation => 'Verrouiller l\'orientation';
-
-  @override
-  String get portrait => 'Portrait';
-
-  @override
-  String get landscape => 'Paysage';
 
   @override
   String get customDisplaySettings => 'Paramètres personnalisés';
@@ -430,44 +377,6 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get topBarHiddenDesc =>
       'La barre d\'état est masquée (glisser vers le bas pour afficher)';
-
-  @override
-  String get screenRotatesAutomatically =>
-      'L\'écran pivote automatiquement selon l\'orientation';
-
-  @override
-  String lockedIn(Object orientation) {
-    return 'Verrouillé en $orientation';
-  }
-
-  @override
-  String currently(Object value) {
-    return 'Actuellement: $value';
-  }
-
-  @override
-  String get cancelButton => 'Annuler';
-
-  @override
-  String get fifteenSeconds => '15 secondes';
-
-  @override
-  String get thirtySeconds => '30 secondes';
-
-  @override
-  String get oneMinute => '1 minute';
-
-  @override
-  String get twoMinutes => '2 minutes';
-
-  @override
-  String get fiveMinutes => '5 minutes';
-
-  @override
-  String get tenMinutes => '10 minutes';
-
-  @override
-  String get thirtyMinutes => '30 minutes';
 
   @override
   String get passwordProtection => 'Protection par mot de passe';
@@ -553,10 +462,27 @@ class AppLocalizationsFr extends AppLocalizations {
   String get savedNetworks => 'Réseaux enregistrés';
 
   @override
+  String get savedNetworksLabel => 'Réseaux enregistrés :';
+
+  @override
   String get forget => 'Oublier';
 
   @override
   String get connect => 'Connecter';
+
+  @override
+  String get cannotLoadPage => 'Impossible de charger la page web';
+
+  @override
+  String get websiteUnreachableDesc =>
+      'Le site web n\'a pas pu être atteint. Veuillez vérifier votre connexion Internet et réessayer.';
+
+  @override
+  String get wifiAccessError => 'Erreur d\'accès WiFi :';
+
+  @override
+  String get noSavedNetworksFound =>
+      'Aucun réseau enregistré trouvé ou la liste des réseaux est vide.';
 
   @override
   String get initializationError => 'Erreur d\'initialisation';
@@ -708,6 +634,15 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get serverMessage => 'Message du serveur :';
+
+  @override
+  String get sapServerError => 'Erreur Serveur SAP';
+
+  @override
+  String get errorDetails => 'Détails de l\'erreur :';
+
+  @override
+  String get serverTime => 'Heure serveur :';
 
   @override
   String get retryButton => 'Réessayer';
