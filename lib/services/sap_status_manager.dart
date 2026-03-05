@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import '../models/device_info.dart';
 import '../utils/logger.dart';
 import 'firebaseDataManagement.dart';
@@ -12,6 +13,7 @@ class SapStatusManager {
   SapStatusManager._internal();
 
   Timer? _statusCheckTimer;
+  static const _platform = MethodChannel('devicegate.app/shortcut');
   
   // Status thresholds in minutes
   static const int _slowThreshold = 5;
@@ -33,9 +35,12 @@ class SapStatusManager {
       
       log('SapStatusManager: Entered SAP EWM (previous: ${previousStatus.name}, new: active)');
       
+      // Sync all device info to Android for shutdown detection
+      _syncAllDeviceInfoToAndroid();
+      
       // Write to Firestore if status changed
       if (previousStatus != SapStatus.active) {
-        _writeStatusToFirestore();
+        _writeStatusToFirestore(LogTrigger.enterSapEwm);
       }
       
       // Start timer for first status change (5 minutes → slow)
@@ -54,9 +59,12 @@ class SapStatusManager {
       
       log('SapStatusManager: Left SAP EWM (previous: ${previousStatus.name}, new: off)');
       
+      // Sync all device info to Android for shutdown detection
+      _syncAllDeviceInfoToAndroid();
+      
       // Write to Firestore if status changed
       if (previousStatus != SapStatus.off) {
-        _writeStatusToFirestore();
+        _writeStatusToFirestore(LogTrigger.leaveSapEwm);
       }
       
       // Stop timer
@@ -81,7 +89,7 @@ class SapStatusManager {
       if (previousStatus != SapStatus.active && previousStatus != SapStatus.off) {
         deviceInfo.sapStatus = SapStatus.active;
         log('SapStatusManager: Status changed from ${previousStatus.name} to active');
-        _writeStatusToFirestore();
+        _writeStatusToFirestore(LogTrigger.pageChange);
       }
       
       // Reset timer - user is active, restart 5-minute countdown
@@ -160,7 +168,7 @@ class SapStatusManager {
     // Transition to target status
     deviceInfo.sapStatus = targetStatus;
     log('SapStatusManager: Status changed to ${targetStatus.name} ($minutesElapsed min since last activity)');
-    _writeStatusToFirestore();
+    _writeStatusToFirestore(LogTrigger.statusChange);
     
     // Start timer for next status (if not at inactive)
     _startNextTimer(targetStatus);
@@ -208,13 +216,41 @@ class SapStatusManager {
     _statusCheckTimer = null;
   }
 
-  /// Write current status to Firestore
-  void _writeStatusToFirestore() {
+  /// Write current status to Firestore with the trigger that caused this write
+  void _writeStatusToFirestore(LogTrigger trigger) {
     final deviceInfo = DeviceInfo();
     deviceInfo.lastInputTime = Timestamp.now();
     
-    log('SapStatusManager: Writing to Firestore - status: ${deviceInfo.sapStatus.name}');
-    FirebaseDataManagement.writeDeviceInfo();
+    log('SapStatusManager: Writing to Firestore - status: ${deviceInfo.sapStatus.name}, trigger: ${trigger.name}');
+    
+    // Sync all device info to Android for shutdown detection
+    _syncAllDeviceInfoToAndroid();
+    
+    FirebaseDataManagement.writeDeviceInfo(trigger: trigger);
+  }
+
+  /// Sync all device info to Android SharedPreferences for shutdown detection
+  void _syncAllDeviceInfoToAndroid() {
+    try {
+      final deviceInfo = DeviceInfo();
+      _platform.invokeMethod('saveDeviceInfo', {
+        'sapStatus': deviceInfo.sapStatus.name,
+        'sapUser': deviceInfo.sapUser,
+        'sapRessource': deviceInfo.sapRessource,
+        'appDeviceName': deviceInfo.appDeviceName,
+        'appVersion': deviceInfo.appVersion,
+        'manufacturer': deviceInfo.manufacturer,
+        'model': deviceInfo.model,
+        'deviceName': deviceInfo.deviceName,
+        'androidVersion': deviceInfo.androidVersion,
+        'securityPatch': deviceInfo.securityPatch,
+        'serialNumber': deviceInfo.serialNumber,
+        'productName': deviceInfo.productName,
+        'bluetoothDevices': deviceInfo.bluetoothDevices.map((d) => '${d['name']}|${d['status']}').join(';'),
+      });
+    } catch (e) {
+      log('SapStatusManager: Error syncing device info to Android: $e');
+    }
   }
 
   /// Dispose resources

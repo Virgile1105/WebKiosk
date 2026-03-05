@@ -6,7 +6,8 @@ import '../utils/logger.dart';
 class FirebaseDataManagement {
   /// Write DeviceInfo to Firestore 'Devices/{serialNumber}/Logs' collection
   /// Creates a new document for each input
-  static Future<void> writeDeviceInfo() async {
+  /// [trigger] - What initiated this log entry (e.g., enterSapEwm, pageChange, shutdown)
+  static Future<void> writeDeviceInfo({LogTrigger? trigger}) async {
     try {
       final deviceInfo = DeviceInfo();
       
@@ -22,14 +23,15 @@ class FirebaseDataManagement {
       log('WriteDeviceInfo: serialNumber=${deviceInfo.serialNumber}, '
           'appDeviceName=${deviceInfo.appDeviceName}, '
           'productName=${deviceInfo.productName}, '
-          'sapUser=${deviceInfo.sapUser}');
+          'sapUser=${deviceInfo.sapUser}, '
+          'trigger=${trigger?.name ?? "unknown"}');
 
       // Create new document in Devices/{serialNumber}/Logs subcollection
       await FirebaseFirestore.instance
           .collection('Devices')
           .doc(deviceInfo.serialNumber)
           .collection('Logs')
-          .add(deviceInfo.toFirestore());
+          .add(deviceInfo.toFirestore(trigger: trigger));
       
       log('WriteDeviceInfo: Successfully written to Firestore');
     } catch (e, stackTrace) {

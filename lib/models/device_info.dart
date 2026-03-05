@@ -13,6 +13,15 @@ enum SapStatus {
   off,      // User left SAP EWM
 }
 
+/// Triggers that initiate a Firestore log entry
+enum LogTrigger {
+  enterSapEwm,    // User enters SAP EWM webview
+  leaveSapEwm,    // User leaves SAP EWM webview
+  pageChange,     // User navigates to a new page
+  statusChange,   // SAP status changes due to inactivity
+  shutdown,       // Device shutdown detected
+}
+
 class DeviceInfo {
   static final DeviceInfo _instance = DeviceInfo._internal();
   factory DeviceInfo() => _instance;
@@ -59,7 +68,7 @@ class DeviceInfo {
   String get productName => (manufacturer + ' ' + model).trim();
 
   /// Convert DeviceInfo to Firestore document
-  Map<String, dynamic> toFirestore() {
+  Map<String, dynamic> toFirestore({LogTrigger? trigger}) {
     return {
       'manufacturer': manufacturer,
       'model': model,
@@ -75,6 +84,7 @@ class DeviceInfo {
       'lastInputTime': lastInputTime ?? Timestamp.now(),
       'sapStatus': sapStatus.name,
       'bluetoothDevices': bluetoothDevices,
+      'trigger': trigger?.name ?? 'unknown',
     };
   }
 }

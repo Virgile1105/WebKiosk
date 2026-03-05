@@ -19,6 +19,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     
     <!-- Allow querying all packages on Android 11+ -->
     <queries>
@@ -87,6 +89,17 @@
             android:name=".KioskService"
             android:enabled="true"
             android:exported="false" />
+        
+        <!-- Shutdown Monitor Service - foreground service for shutdown detection -->
+        <service
+            android:name=".ShutdownMonitorService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="device_shutdown_monitoring" />
+        </service>
         
         <!-- Android 12+ Provisioning Mode Activity -->
         <activity

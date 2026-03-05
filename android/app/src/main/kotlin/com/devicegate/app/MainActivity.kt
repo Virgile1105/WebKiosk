@@ -78,6 +78,23 @@ class MainActivity : FlutterActivity() {
         
         // Ensure we're set as default home launcher on every app start
         setAsDefaultHome()
+        
+        // Start the shutdown monitor service
+        startShutdownMonitorService()
+    }
+    
+    private fun startShutdownMonitorService() {
+        try {
+            val serviceIntent = Intent(this, ShutdownMonitorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Log.d(TAG, "ShutdownMonitorService started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start ShutdownMonitorService", e)
+        }
     }
     
     private fun grantRequiredPermissions() {
@@ -511,10 +528,39 @@ class MainActivity : FlutterActivity() {
                 "getDeviceModel" -> {
                     try {
                         val deviceModel = getDeviceModel()
+                        // Save serial number for ShutdownMonitorService
+                        val serialNumber = deviceModel["serialNumber"]
+                        if (!serialNumber.isNullOrEmpty()) {
+                            ShutdownMonitorService.saveSerialNumber(this, serialNumber)
+                        }
                         result.success(deviceModel)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error getting device model", e)
                         result.error("DEVICE_MODEL_ERROR", e.message, null)
+                    }
+                }
+                "saveDeviceInfo" -> {
+                    try {
+                        ShutdownMonitorService.saveDeviceInfo(
+                            this,
+                            sapStatus = call.argument<String>("sapStatus") ?: "off",
+                            sapUser = call.argument<String>("sapUser") ?: "",
+                            sapRessource = call.argument<String>("sapRessource") ?: "",
+                            appDeviceName = call.argument<String>("appDeviceName") ?: "",
+                            appVersion = call.argument<String>("appVersion") ?: "",
+                            manufacturer = call.argument<String>("manufacturer") ?: "",
+                            model = call.argument<String>("model") ?: "",
+                            deviceName = call.argument<String>("deviceName") ?: "",
+                            androidVersion = call.argument<String>("androidVersion") ?: "",
+                            securityPatch = call.argument<String>("securityPatch") ?: "",
+                            serialNumber = call.argument<String>("serialNumber") ?: "",
+                            productName = call.argument<String>("productName") ?: "",
+                            bluetoothDevices = call.argument<String>("bluetoothDevices") ?: ""
+                        )
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error saving device info", e)
+                        result.error("DEVICE_INFO_ERROR", e.message, null)
                     }
                 }
                 "getBluetoothDevices" -> {
@@ -1515,7 +1561,7 @@ class MainActivity : FlutterActivity() {
             
             // TIER 2: No physical keyboard - check if any Bluetooth device is ACTIVELY connected
             val bluetoothDevices = getBluetoothDevices()
-            val connectedBluetoothDevices = bluetoothDevices.filter { it["connected"] == "Connected" }
+            val connectedBluetoothDevices = bluetoothDevices.filter { it["isConnected"] == true }
             val hasConnectedBluetoothDevice = connectedBluetoothDevices.isNotEmpty()
             
             Log.d(TAG, "Bluetooth check: ${bluetoothDevices.size} paired, ${connectedBluetoothDevices.size} connected")
@@ -1556,9 +1602,35 @@ class MainActivity : FlutterActivity() {
             if (isHardwareDevice) {
                 // Don't block hardware input devices - allow them to work
                 Log.d(TAG, "Detected hardware input device IME: $currentIme - allowing input")
+                
+                // As device owner, restrict permitted IMEs to ONLY the hardware device IME
+                // This blocks Samsung Keyboard from ever appearing
+                initDevicePolicyManager()
+                val isOwner = isDeviceOwner()
+                Log.d(TAG, "Checking IME restriction: isDeviceOwner=$isOwner, currentIme=$currentIme")
+                if (isOwner && currentIme != null) {
+                    try {
+                        // Extract package name from IME ID (format: package/class)
+                        val imePackage = currentIme.split("/").firstOrNull()
+                        Log.d(TAG, "IME package extracted: $imePackage")
+                        if (imePackage != null) {
+                            // Only allow the hardware IME package
+                            devicePolicyManager?.setPermittedInputMethods(adminComponent!!, listOf(imePackage))
+                            Log.d(TAG, "Restricted IME to hardware device only: $imePackage (Samsung Keyboard blocked)")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error restricting IME", e)
+                    }
+                } else {
+                    Log.w(TAG, "Cannot restrict IME: isDeviceOwner=$isOwner, currentIme=$currentIme")
+                }
+                
                 // Clear any previous aggressive flags to ensure scanner works
                 window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
                 window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED)
+                
+                // Force hide the Honeywell soft keyboard - we want scanner input but not visual keyboard
+                forceHideKeyboard(imm)
             } else {
                 // It's a soft keyboard - hide it aggressively
                 Log.d(TAG, "Detected soft keyboard IME: $currentIme - blocking")
@@ -1591,6 +1663,28 @@ class MainActivity : FlutterActivity() {
         }
         
         Log.d(TAG, "All soft keyboards blocked with aggressive IME hiding")
+    }
+    
+    /**
+     * Force hides any currently visible soft keyboard.
+     * This dismisses the Honeywell soft keyboard while still allowing scanner input.
+     */
+    private fun forceHideKeyboard(imm: android.view.inputmethod.InputMethodManager) {
+        try {
+            // Hide from window token
+            window?.decorView?.windowToken?.let { token ->
+                imm.hideSoftInputFromWindow(token, android.view.inputmethod.InputMethodManager.HIDE_NOT_ALWAYS)
+                Log.d(TAG, "Force hid keyboard via decorView token")
+            }
+            
+            // Also hide from current focus
+            currentFocus?.windowToken?.let { token ->
+                imm.hideSoftInputFromWindow(token, 0)
+                Log.d(TAG, "Force hid keyboard via currentFocus token")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in forceHideKeyboard", e)
+        }
     }
     
     /**
@@ -1657,6 +1751,17 @@ class MainActivity : FlutterActivity() {
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED or
                 android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             )
+            
+            // Restore all permitted IMEs (allow Samsung Keyboard again)
+            initDevicePolicyManager()
+            if (isDeviceOwner()) {
+                try {
+                    devicePolicyManager?.setPermittedInputMethods(adminComponent!!, null)
+                    Log.d(TAG, "Permitted IME restriction cleared - all IMEs allowed")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error clearing IME restrictions", e)
+                }
+            }
             
             Log.d(TAG, "IME restored to default behavior, aggressive flags removed")
         } catch (e: Exception) {
@@ -2574,9 +2679,9 @@ class MainActivity : FlutterActivity() {
                         address?.let { connectedDevices.contains(it) } ?: false
                     }
                     
-                    // Use boolean for connection status (more reliable than string comparison)
+                    // Use boolean for connection status
                     deviceInfo["isConnected"] = isConnected
-                    Log.d(TAG, "  Connection status: isConnected=$isConnected")
+                    Log.d(TAG, "  Connection status: isConnected=${deviceInfo["isConnected"]}")
                     
                     // Check bond state
                     val bondState = when (device.bondState) {
@@ -2658,7 +2763,7 @@ class MainActivity : FlutterActivity() {
                     deviceInfo["type"] = deviceType
                     
                     devicesList.add(deviceInfo)
-                    Log.i(TAG, "Added device: ${deviceInfo["name"]} - ${deviceInfo["type"]} - ${deviceInfo["connected"]}")
+                    Log.i(TAG, "Added device: ${deviceInfo["name"]} - ${deviceInfo["type"]} - isConnected=${deviceInfo["isConnected"]}")
                 } catch (e: SecurityException) {
                     Log.e(TAG, "Security exception accessing device: ${e.message}")
                 } catch (e: Exception) {
