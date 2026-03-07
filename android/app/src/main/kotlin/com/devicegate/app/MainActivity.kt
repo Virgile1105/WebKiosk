@@ -28,26 +28,34 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import android.net.wifi.WifiManager
-import kotlin.math.min
 import android.os.Bundle
-import android.view.View
-import android.view.WindowManager
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
 import android.hardware.usb.UsbManager
-import android.os.UserManager
+import android.view.View
 import android.provider.Settings
+import kotlin.math.min
 import android.accounts.AccountManager
 import android.net.Uri
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import org.json.JSONArray
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.os.Handler
+import android.os.Looper
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "devicegate.app/shortcut"
     private val BLUETOOTH_EVENT_CHANNEL = "devicegate.app/bluetooth_events"
     private val TAG = "DeviceGate"
+    private var clipboardManager: ClipboardManager? = null
+    private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private var isMonitoringClipboard = false
+    private var lastClipboardText: String = ""
+    private var lastSentTime: Long = 0
+    private var lastSentText: String = ""
     private var methodChannel: MethodChannel? = null
     private var bluetoothEventChannel: EventChannel? = null
     private val bluetoothEventSinks = mutableListOf<EventChannel.EventSink>()
@@ -455,6 +463,24 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error resetting input connection", e)
                         result.error("INPUT_ERROR", e.message, null)
+                    }
+                }
+                "startClipboardMonitoring" -> {
+                    try {
+                        startClipboardMonitoring()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error starting clipboard monitoring", e)
+                        result.error("CLIPBOARD_ERROR", e.message, null)
+                    }
+                }
+                "stopClipboardMonitoring" -> {
+                    try {
+                        stopClipboardMonitoring()
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error stopping clipboard monitoring", e)
+                        result.error("CLIPBOARD_ERROR", e.message, null)
                     }
                 }
                 "clearDeviceOwner" -> {
@@ -1801,6 +1827,191 @@ class MainActivity : FlutterActivity() {
             Log.d(TAG, "Input connection reset completed - scanner should now receive input")
         } catch (e: Exception) {
             Log.e(TAG, "Error resetting input connection", e)
+        }
+    }
+
+    /**
+     * Starts monitoring the system clipboard for changes (e.g., from scanner's clipboard mode).
+     * When clipboard content changes, sends it to Flutter to inject into WebView.
+     */
+    private fun startClipboardMonitoring() {
+        try {
+            if (isMonitoringClipboard) {
+                Log.d(TAG, "Clipboard monitoring already active")
+                return
+            }
+            
+            clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            
+            if (clipboardManager == null) {
+                Log.e(TAG, "ClipboardManager not available")
+                return
+            }
+            
+            // Get initial clipboard content to avoid false positives
+            try {
+                val clip = clipboardManager?.primaryClip
+                if (clip != null && clip.itemCount > 0) {
+                    val item = clip.getItemAt(0)
+                    
+                    // Try different ways to get the text (same logic as listener)
+                    var initialText = ""
+                    
+                    // Method 1: Standard text access
+                    item.text?.let {
+                        initialText = it.toString()
+                        Log.d(TAG, "Initial clipboard text via CharSequence: '$initialText'")
+                    }
+                    
+                    // Method 2: Try HTML text if no plain text
+                    if (initialText.isEmpty()) {
+                        item.htmlText?.let {
+                            initialText = android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+                            Log.d(TAG, "Initial clipboard text via HTML: '$initialText'")
+                        }
+                    }
+                    
+                    // Method 3: Try URI as text
+                    if (initialText.isEmpty()) {
+                        item.uri?.let {
+                            initialText = it.toString()
+                            Log.d(TAG, "Initial clipboard text via URI: '$initialText'")
+                        }
+                    }
+                    
+                    // Method 4: Try Intent data
+                    if (initialText.isEmpty()) {
+                        item.intent?.let {
+                            initialText = it.toString()
+                            Log.d(TAG, "Initial clipboard text via Intent: '$initialText'")
+                        }
+                    }
+                    
+                    lastClipboardText = initialText
+                    Log.d(TAG, "Initial clipboard content set: '$lastClipboardText'")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error getting initial clipboard content", e)
+            }
+            
+            clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+                try {
+                    Log.d(TAG, "Clipboard listener triggered")
+                    val clip = clipboardManager?.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        Log.d(TAG, "Clipboard has ${clip.itemCount} items")
+                        
+                        // Log all available MIME types for debugging
+                        val item = clip.getItemAt(0)
+                        val mimeTypes = item.uri?.let { "URI: $it" } ?: "No URI"
+                        Log.d(TAG, "Clipboard MIME types available: $mimeTypes")
+                        
+                        // Try different ways to get the text
+                        var newText = ""
+                        var textSource = "none"
+                        
+                        // Method 1: Standard text access
+                        item.text?.let {
+                            newText = it.toString()
+                            textSource = "text(CharSequence)"
+                            Log.d(TAG, "Got text via CharSequence: '$newText'")
+                        }
+                        
+                        // Method 2: Try HTML text if no plain text
+                        if (newText.isEmpty()) {
+                            item.htmlText?.let {
+                                newText = android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+                                textSource = "htmlText"
+                                Log.d(TAG, "Got text via HTML: '$newText'")
+                            }
+                        }
+                        
+                        // Method 3: Try URI as text
+                        if (newText.isEmpty()) {
+                            item.uri?.let {
+                                newText = it.toString()
+                                textSource = "uri"
+                                Log.d(TAG, "Got text via URI: '$newText'")
+                            }
+                        }
+                        
+                        // Method 4: Try Intent data
+                        if (newText.isEmpty()) {
+                            item.intent?.let {
+                                newText = it.toString()
+                                textSource = "intent"
+                                Log.d(TAG, "Got text via Intent: '$newText'")
+                            }
+                        }
+                        
+                        Log.d(TAG, "Final clipboard content from $textSource: '$newText' (length: ${newText.length})")
+                        
+                        // Only process if text is non-empty (allow duplicates for scanner)
+                        if (newText.isNotEmpty()) {
+                            val currentTime = System.currentTimeMillis()
+                            
+                            // Debounce: ignore if same text sent within 100ms
+                            if (newText == lastSentText && currentTime - lastSentTime < 100) {
+                                Log.d(TAG, "Ignoring duplicate clipboard text within debounce period")
+                            } else {
+                                lastClipboardText = newText
+                                Log.d(TAG, "Sending clipboard text to Flutter: $newText (${newText.length} chars)")
+                                
+                                // Send to Flutter on main thread
+                                Handler(Looper.getMainLooper()).post {
+                                    try {
+                                        methodChannel?.invokeMethod("onClipboardChange", mapOf(
+                                            "text" to newText
+                                        ))
+                                        Log.d(TAG, "Sent clipboard text to Flutter")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error sending clipboard text to Flutter", e)
+                                    }
+                                }
+                                
+                                // Update debounce tracking
+                                lastSentTime = currentTime
+                                lastSentText = newText
+                            }
+                        } else {
+                            Log.d(TAG, "Clipboard text unchanged or empty")
+                        }
+                    } else {
+                        Log.d(TAG, "No clipboard content")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in clipboard listener", e)
+                }
+            }
+            
+            clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
+            isMonitoringClipboard = true
+            Log.d(TAG, "Clipboard monitoring started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting clipboard monitoring", e)
+        }
+    }
+
+    /**
+     * Stops monitoring the system clipboard.
+     */
+    private fun stopClipboardMonitoring() {
+        try {
+            if (!isMonitoringClipboard) {
+                Log.d(TAG, "Clipboard monitoring not active")
+                return
+            }
+            
+            clipboardListener?.let { listener ->
+                clipboardManager?.removePrimaryClipChangedListener(listener)
+            }
+            
+            clipboardListener = null
+            isMonitoringClipboard = false
+            lastClipboardText = ""
+            Log.d(TAG, "Clipboard monitoring stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping clipboard monitoring", e)
         }
     }
 

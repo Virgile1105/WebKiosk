@@ -15,6 +15,7 @@ class ConfigurationScreen extends StatefulWidget {
 class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsBindingObserver {
   static const platform = MethodChannel('devicegate.app/shortcut');
   bool _alwaysShowTopBar = false;
+  bool _isWedgeInput = false;
   bool _isLoading = true;
 
   @override
@@ -36,6 +37,7 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
       
       setState(() {
         _alwaysShowTopBar = prefs.getBool('always_show_top_bar') ?? false;
+        _isWedgeInput = prefs.getBool('wedge_input_enabled') ?? false;
         _isLoading = false;
       });
       
@@ -81,6 +83,18 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
           ),
         );
       }
+    }
+  }
+
+  Future<void> _saveWedgeInputSetting(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('wedge_input_enabled', value);
+      setState(() {
+        _isWedgeInput = value;
+      });
+    } catch (e) {
+      log('Error saving wedge input setting: $e');
     }
   }
 
@@ -199,6 +213,46 @@ class _ConfigurationScreenState extends State<ConfigurationScreen> with WidgetsB
                             ),
                           ),
                           activeColor: Colors.blue,
+                        ),
+                      ),
+                      Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SwitchListTile(
+                          value: _isWedgeInput,
+                          onChanged: _saveWedgeInputSetting,
+                          title: Text(
+                            l10n.scanWedgeEnable,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _isWedgeInput
+                                ? l10n.scannerInputEnabled
+                                : l10n.scannerInputDisabled,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          secondary: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.qr_code_scanner,
+                              color: Colors.green.shade700,
+                              size: 24,
+                            ),
+                          ),
+                          activeColor: Colors.green,
                         ),
                       ),
                     ],

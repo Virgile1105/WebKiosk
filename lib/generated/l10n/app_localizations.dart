@@ -782,6 +782,24 @@ abstract class AppLocalizations {
   /// **'Status bar is hidden (swipe down to show)'**
   String get topBarHiddenDesc;
 
+  /// No description provided for @scanWedgeEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan Wedge'**
+  String get scanWedgeEnable;
+
+  /// No description provided for @scannerInputEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Wedge Scanner input is enabled'**
+  String get scannerInputEnabled;
+
+  /// No description provided for @scannerInputDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Wedge Scanner input is disabled'**
+  String get scannerInputDisabled;
+
   /// No description provided for @passwordProtection.
   ///
   /// In en, this message translates to:

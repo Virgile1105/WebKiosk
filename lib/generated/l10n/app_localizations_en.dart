@@ -362,6 +362,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get topBarHiddenDesc => 'Status bar is hidden (swipe down to show)';
 
   @override
+  String get scanWedgeEnable => 'Scan Wedge';
+
+  @override
+  String get scannerInputEnabled => 'Wedge Scanner input is enabled';
+
+  @override
+  String get scannerInputDisabled => 'Wedge Scanner input is disabled';
+
+  @override
   String get passwordProtection => 'Password Protection';
 
   @override

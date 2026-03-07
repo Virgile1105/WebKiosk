@@ -65,6 +65,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
   late bool _useCustomKeyboardRuntime; // Runtime setting for custom keyboard
   late bool _disableCopyPasteRuntime; // Runtime setting for copy/paste
   late bool _enableWarningSoundRuntime; // Runtime setting for warning sound
+  late bool _isWedgeInputEnabled; // Runtime setting for wedge input
   Offset _keyboardPosition = const Offset(100, 200); // Temporary default, will be adjusted
   Offset _minimizedIconPosition = const Offset(100, 200); // Position for minimized icon
   Offset? _savedExpandedKeyboardPosition; // Saved position for expanded keyboard mode
@@ -212,11 +213,24 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       _useCustomKeyboardRuntime = widget.useCustomKeyboard;
       _disableCopyPasteRuntime = widget.disableCopyPaste;
       _enableWarningSoundRuntime = widget.enableWarningSound;
+      _isWedgeInputEnabled = false; // Default to false, will be loaded from prefs
       _audioPlayer = AudioPlayer();
       _initializeWebView();
       _loadCustomSettings(); // Fire-and-forget async loading
       _loadAppVersion(); // Load app version
       _keyboardMinimized = true; // Show keyboard shortcut by default
+      
+      // Load wedge input setting and then start clipboard monitoring if enabled
+      _loadWedgeInputSetting().then((_) {
+        if (_isWedgeInputEnabled) {
+          // Set up clipboard monitoring method channel handler
+          platform.setMethodCallHandler(_handleNativeMethodCall);
+          // Start clipboard monitoring for scanner's clipboard mode
+          _startClipboardMonitoring();
+        } else {
+          log('Wedge input disabled - clipboard monitoring not started');
+        }
+      });
       
       // If custom keyboard is enabled, disable system keyboards at device level
       if (_useCustomKeyboardRuntime) {
@@ -350,6 +364,18 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       log('Error loading custom settings: $error');
       log('Stack trace: $stackTrace');
       // Non-critical - use defaults and continue
+    }
+  }
+
+  Future<void> _loadWedgeInputSetting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _isWedgeInputEnabled = prefs.getBool('wedge_input_enabled') ?? false;
+      log('Loaded wedge input setting: $_isWedgeInputEnabled');
+    } catch (error, stackTrace) {
+      log('Error loading wedge input setting: $error');
+      log('Stack trace: $stackTrace');
+      _isWedgeInputEnabled = false; // Default to false on error
     }
   }
 
@@ -739,9 +765,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               });
               _extractFavicon();
               // Prevent auto-focus on input fields to avoid keyboard popup (if option enabled)
-              if (widget.disableAutoFocus) {
-                _preventAutoFocus();
-              }
+          //    if (widget.disableAutoFocus) {
+          //      _preventAutoFocus();
+          //    }
               // Set up custom keyboard after page loads
               if (_useCustomKeyboardRuntime) {
                 _setupCustomKeyboard();
@@ -976,7 +1002,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         }, true);
         
         document.addEventListener('keydown', function(e) {
-          if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x', 'a'].includes(e.key)) {
+          if ((e.ctrlKey || e.metaKey) && ['c', 'x', 'v', 'a'].includes(e.key)) {
             e.preventDefault();
             e.stopPropagation();
             return false;
@@ -1001,6 +1027,8 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           document.head.appendChild(style);
         }
 
+    
+
         // Set up input listeners (only if not already set up)
         if (!window.inputListenersSetup) {
           window.inputListenersSetup = true;
@@ -1008,8 +1036,11 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           function setupInputElement(input) {
             if (input.hasAttribute('data-custom-keyboard')) return;
             input.setAttribute('data-custom-keyboard', 'true');
+    
             
             input.addEventListener('focus', function() {
+
+        
               showCustomKeyboard.postMessage('show');
             });
             input.addEventListener('blur', function() {
@@ -1068,7 +1099,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                   function setupInputElement(input) {
                     if (input.hasAttribute('data-custom-keyboard')) return;
                     input.setAttribute('data-custom-keyboard', 'true');
+                  
                     input.addEventListener('focus', function() {
+                 
                       window.parent.postMessage('showCustomKeyboard', '*');
                     });
                     input.addEventListener('blur', function() {
@@ -4660,6 +4693,11 @@ Widget _buildSavedNetworkItem(dynamic network) {
     // Remove lifecycle observer
     WidgetsBinding.instance.removeObserver(this);
     
+    // Stop clipboard monitoring only if it was started
+    if (_isWedgeInputEnabled) {
+      _stopClipboardMonitoring();
+    }
+    
     // Re-enable system keyboards when leaving the screen
     if (_useCustomKeyboardRuntime) {
       _enableSystemKeyboards();
@@ -4681,6 +4719,146 @@ Widget _buildSavedNetworkItem(dynamic network) {
     _controller.clearLocalStorage();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  /// Starts monitoring system clipboard for scanner input
+  Future<void> _startClipboardMonitoring() async {
+    log('About to invoke startClipboardMonitoring');
+    try {
+      await platform.invokeMethod('startClipboardMonitoring');
+      log('Clipboard monitoring started - scanner clipboard mode will auto-inject');
+    } catch (e) {
+      log('Error starting clipboard monitoring: $e');
+    }
+  }
+
+  /// Stops monitoring system clipboard
+  Future<void> _stopClipboardMonitoring() async {
+    try {
+      await platform.invokeMethod('stopClipboardMonitoring');
+      log('Clipboard monitoring stopped');
+    } catch (e) {
+      log('Error stopping clipboard monitoring: $e');
+    }
+  }
+
+  /// Handles method calls from native code (e.g., clipboard changes)
+  Future<void> _handleNativeMethodCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onClipboardChange':
+        final text = call.arguments['text'] as String?;
+        if (text != null && text.isNotEmpty) {
+          log('Clipboard change detected from scanner: $text (${text.length} chars)');
+          // Inject the clipboard text into the WebView's focused input
+          log('About to call _injectTextIntoWebView with: $text');
+          await _injectTextIntoWebView(text);
+        }
+        break;
+      default:
+        log('Unknown method call from native: ${call.method}');
+    }
+  }
+
+  /// Injects text into the currently focused input in the WebView
+  Future<void> _injectTextIntoWebView(String text) async {
+    try {
+      // Escape special characters for JavaScript
+      final escapedText = text
+          .replaceAll('\\', '\\\\')
+          .replaceAll("'", "\\'")
+          .replaceAll('\n', '\\n')
+          .replaceAll('\r', '\\r');
+      
+      await _controller.runJavaScript('''
+        (function() {
+          try {
+            console.log('Starting clipboard text injection');
+            var activeElement = document.activeElement;
+            if (!activeElement || (activeElement.tagName !== 'INPUT' && activeElement.tagName !== 'TEXTAREA' && activeElement.contentEditable !== 'true')) {
+              debugLog.postMessage('No focused input field for clipboard injection');
+              return;
+            }
+            
+            var text = '$escapedText';
+            debugLog.postMessage('Injecting clipboard text: "' + text + '" (' + text.length + ' chars)');
+            
+            // Log character codes for debugging
+            var charCodes = [];
+            for (var i = 0; i < text.length; i++) {
+              charCodes.push(text.charCodeAt(i));
+            }
+            debugLog.postMessage('Character codes: [' + charCodes.join(', ') + ']');
+            
+            // Inject text character by character
+            for (var i = 0; i < text.length; i++) {
+              var char = text.charAt(i);
+              if (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') {
+                activeElement.value += char;
+                activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+              } else if (activeElement.contentEditable === 'true') {
+                var selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                  var range = selection.getRangeAt(0);
+                  range.deleteContents();
+                  var textNode = document.createTextNode(char);
+                  range.insertNode(textNode);
+                  range.setStartAfter(textNode);
+                  range.setEndAfter(textNode);
+                }
+              }
+            }
+            
+            // Dispatch Enter key event to submit the form
+            var enterKeydownEvent = new KeyboardEvent('keydown', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              charCode: 0,
+              bubbles: true,
+              cancelable: true
+            });
+            activeElement.dispatchEvent(enterKeydownEvent);
+            
+            var enterKeypressEvent = new KeyboardEvent('keypress', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              charCode: 13,
+              bubbles: true,
+              cancelable: true
+            });
+            activeElement.dispatchEvent(enterKeypressEvent);
+            
+            var enterKeyupEvent = new KeyboardEvent('keyup', {
+              key: 'Enter',
+              code: 'Enter',
+              keyCode: 13,
+              which: 13,
+              charCode: 0,
+              bubbles: true,
+              cancelable: true
+            });
+            activeElement.dispatchEvent(enterKeyupEvent);
+            
+            // Trigger input/change events
+            var inputEvent = new Event('input', { bubbles: true, cancelable: true });
+            activeElement.dispatchEvent(inputEvent);
+            var changeEvent = new Event('change', { bubbles: true, cancelable: true });
+            activeElement.dispatchEvent(changeEvent);
+            
+            debugLog.postMessage('Clipboard text injected successfully');
+          } catch (e) {
+            debugLog.postMessage('Error injecting clipboard text: ' + e.message);
+          }
+        })();
+      ''');
+      
+      log('Clipboard text injected into WebView successfully');
+    } catch (e) {
+      log('Error injecting clipboard text: $e');
+    }
   }
 }
 

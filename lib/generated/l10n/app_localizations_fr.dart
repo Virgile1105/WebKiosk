@@ -379,6 +379,15 @@ class AppLocalizationsFr extends AppLocalizations {
       'La barre d\'état est masquée (glisser vers le bas pour afficher)';
 
   @override
+  String get scanWedgeEnable => 'Scan Wedge';
+
+  @override
+  String get scannerInputEnabled => 'Wedge Scanner activée';
+
+  @override
+  String get scannerInputDisabled => 'Wedge Scanner désactivée';
+
+  @override
   String get passwordProtection => 'Protection par mot de passe';
 
   @override

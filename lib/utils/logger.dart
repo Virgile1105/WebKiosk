@@ -1,8 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:developer' as developer;
 
 void log(String message) {
-  if (kDebugMode) {
-    // ignore: avoid_print
-    print('[DeviceGate] $message');
- }
+  developer.log(message, name: 'DeviceGate');
 }
