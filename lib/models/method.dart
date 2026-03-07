@@ -2,6 +2,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import 'device_info.dart';
+import '../services/firebaseDataManagement.dart';
 
 Future<String> loadAppVersion() async {
   try {
@@ -50,6 +51,10 @@ Future<void> saveSapUser(String sapUser) async {
     final deviceInfo = DeviceInfo();
     deviceInfo.sapUser = sapUser;
     log('SAP user saved: $sapUser');
+    
+    // Update Firestore with device info
+    final trigger = sapUser.isEmpty ? LogTrigger.logout : LogTrigger.login;
+    await FirebaseDataManagement.writeDeviceInfo(trigger: trigger);
   } catch (error) {
     log('Error saving SAP user: $error');
   }
@@ -68,10 +73,20 @@ Future<String> loadSapRessource() async {
 Future<void> saveSapRessource(String sapRessource) async {
   try {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Check if the ressource has actually changed
+    final currentRessource = prefs.getString('sap_ressource') ?? '';
+    if (currentRessource == sapRessource) {
+      log('SAP ressource unchanged, skipping save: $sapRessource');
+      return;
+    }
+    
     await prefs.setString('sap_ressource', sapRessource);
     // Also update the DeviceInfo singleton
     final deviceInfo = DeviceInfo();
     deviceInfo.sapRessource = sapRessource;
+    // Log to Firebase
+    await FirebaseDataManagement.writeDeviceInfo(trigger: LogTrigger.newRessource);
     log('SAP ressource saved: $sapRessource');
   } catch (error) {
     log('Error saving SAP ressource: $error');

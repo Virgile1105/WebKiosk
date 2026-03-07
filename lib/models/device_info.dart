@@ -20,6 +20,9 @@ enum LogTrigger {
   pageChange,     // User navigates to a new page
   statusChange,   // SAP status changes due to inactivity
   shutdown,       // Device shutdown detected
+  login,          // SAP user login (non-empty user)
+  logout,         // SAP user logout (empty user)
+  newRessource,   // SAP ressource information saved
 }
 
 class DeviceInfo {

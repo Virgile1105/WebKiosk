@@ -709,11 +709,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         'saveSapUserChannel',
         onMessageReceived: (JavaScriptMessage message) {
           final sapUser = message.message.trim();
-          if (sapUser.isNotEmpty) {
-            log('SAP user captured: $sapUser');
-            // Save asynchronously - fire and forget
-            saveSapUser(sapUser);
-          }
+          // Allow empty string for logout events
+          log('SAP user captured: "$sapUser"');
+          // Save asynchronously - fire and forget
+          saveSapUser(sapUser);
         },
       )
       ..addJavaScriptChannel(
@@ -1385,6 +1384,31 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         
         window.sapUserCaptureSetup = true;
         
+        // Save empty user when login page is detected (represents logout)
+        try {
+          saveSapUserChannel.postMessage('');
+        } catch (e) {
+          // Silently ignore channel errors
+        }
+        
+        // Flag to prevent duplicate saves during the same submission
+        window.savingSapUser = false;
+        
+        // Function to save user with deduplication
+        function saveSapUserOnce(value) {
+          if (window.savingSapUser) {
+            return; // Already saving, skip duplicate
+          }
+          window.savingSapUser = true;
+          try {
+            saveSapUserChannel.postMessage(value.trim());
+          } catch (e) {
+            // Silently ignore channel errors
+          }
+          // Reset flag after a short delay
+          setTimeout(function() { window.savingSapUser = false; }, 1000);
+        }
+        
         // Override the form submit to capture sap-user before submission
         var form = document.querySelector('form[name="MobileLoginForm"]') || document.querySelector('form');
         if (form) {
@@ -1392,11 +1416,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           form.submit = function() {
             var userField = document.getElementById('sap-user') || document.querySelector('input[name="sap-user"]');
             if (userField && userField.value && userField.value.trim() !== '') {
-              try {
-                saveSapUserChannel.postMessage(userField.value.trim());
-              } catch (e) {
-                // Silently ignore channel errors
-              }
+              saveSapUserOnce(userField.value);
             }
             return originalSubmit();
           };
@@ -1408,11 +1428,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           window.MobileSubmitLogin = function(value) {
             var userField = document.getElementById('sap-user') || document.querySelector('input[name="sap-user"]');
             if (userField && userField.value && userField.value.trim() !== '') {
-              try {
-                saveSapUserChannel.postMessage(userField.value.trim());
-              } catch (e) {
-                // Silently ignore channel errors
-              }
+              saveSapUserOnce(userField.value);
             }
             return originalMobileSubmitLogin(value);
           };
@@ -1437,6 +1453,24 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         
         window.sapRessourceCaptureSetup = true;
         
+        // Flag to prevent duplicate saves during the same submission
+        window.savingSapRessource = false;
+        
+        // Function to save ressource with deduplication
+        function saveSapRessourceOnce(value) {
+          if (window.savingSapRessource) {
+            return; // Already saving, skip duplicate
+          }
+          window.savingSapRessource = true;
+          try {
+            saveSapRessourceChannel.postMessage(value.trim());
+          } catch (e) {
+            // Silently ignore channel errors
+          }
+          // Reset flag after a short delay
+          setTimeout(function() { window.savingSapRessource = false; }, 1000);
+        }
+        
         // Override the form submit to capture ressource before submission
         var form = document.querySelector('form[name="mobileform"]') || document.querySelector('form');
         if (form) {
@@ -1444,11 +1478,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           form.submit = function() {
             var rsrcField = document.querySelector('input[name="/scwm/s_rsrc-rsrc[1]"]');
             if (rsrcField && rsrcField.value && rsrcField.value.trim() !== '') {
-              try {
-                saveSapRessourceChannel.postMessage(rsrcField.value.trim());
-              } catch (e) {
-                // Silently ignore channel errors
-              }
+              saveSapRessourceOnce(rsrcField.value);
             }
             return originalSubmit();
           };
@@ -1460,11 +1490,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
           window.setOkCode = function(value) {
             var rsrcField = document.querySelector('input[name="/scwm/s_rsrc-rsrc[1]"]');
             if (rsrcField && rsrcField.value && rsrcField.value.trim() !== '') {
-              try {
-                saveSapRessourceChannel.postMessage(rsrcField.value.trim());
-              } catch (e) {
-                // Silently ignore channel errors
-              }
+              saveSapRessourceOnce(rsrcField.value);
             }
             return originalSetOkCode(value);
           };

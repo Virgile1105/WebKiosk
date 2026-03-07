@@ -1584,7 +1584,10 @@ class MainActivity : FlutterActivity() {
                 blockAllSoftKeyboards(imm)
                 return
             }
+
+            blockAllSoftKeyboards(imm)
             
+            /***************************************************************************************************
             // TIER 2: No physical keyboard - check if any Bluetooth device is ACTIVELY connected
             val bluetoothDevices = getBluetoothDevices()
             val connectedBluetoothDevices = bluetoothDevices.filter { it["isConnected"] == true }
@@ -1662,6 +1665,8 @@ class MainActivity : FlutterActivity() {
                 Log.d(TAG, "Detected soft keyboard IME: $currentIme - blocking")
                 blockAllSoftKeyboards(imm)
             }
+
+            ********************************************************************************/
         } catch (e: Exception) {
             Log.e(TAG, "Error in hideImeAggressively", e)
         }
