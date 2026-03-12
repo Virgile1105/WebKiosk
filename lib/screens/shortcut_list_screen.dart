@@ -288,6 +288,7 @@ class _ShortcutListScreenState extends State<ShortcutListScreen> {
           setState(() {
             _shortcuts.add(result);
           });
+          await _saveShortcuts();
           
           if (mounted) {
             final l10n = AppLocalizations.of(context)!;

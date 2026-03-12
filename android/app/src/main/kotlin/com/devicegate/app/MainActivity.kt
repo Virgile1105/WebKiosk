@@ -1955,8 +1955,8 @@ class MainActivity : FlutterActivity() {
                         if (newText.isNotEmpty()) {
                             val currentTime = System.currentTimeMillis()
                             
-                            // Debounce: ignore if same text sent within 100ms
-                            if (newText == lastSentText && currentTime - lastSentTime < 100) {
+                            // Debounce: ignore if same text sent within 500ms
+                            if (newText == lastSentText && currentTime - lastSentTime < 500) {
                                 Log.d(TAG, "Ignoring duplicate clipboard text within debounce period")
                             } else {
                                 lastClipboardText = newText
@@ -1992,6 +1992,78 @@ class MainActivity : FlutterActivity() {
             clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
             isMonitoringClipboard = true
             Log.d(TAG, "Clipboard monitoring started")
+            
+            // Prime the clipboard system by simulating actual text input
+            // Many OEM devices (Samsung, Urovo, Lenovo, etc.) require a real InputConnection
+            // with committed text before their clipboard service will trigger listeners
+            // CRITICAL: Must temporarily clear blocking flags to allow IME connection
+            // Note: Delays are required for IME to properly establish connection
+            try {
+                Log.d(TAG, "Activating clipboard system by simulating text input...")
+                
+                // Step 1: Temporarily clear aggressive IME blocking flags
+                val originalFlags = window.attributes.flags
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+                window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+                Log.d(TAG, "Temporarily cleared IME blocking flags")
+                
+                // Step 2: Create a temporary EditText to establish InputConnection
+                val tempEditText = android.widget.EditText(this)
+                tempEditText.visibility = android.view.View.VISIBLE // Make it visible so IME connects
+                tempEditText.width = 1
+                tempEditText.height = 1
+                
+                // Add it to the window's root view
+                val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+                rootView?.addView(tempEditText)
+                
+                // Step 3: Request focus and show keyboard
+                tempEditText.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                imm?.showSoftInput(tempEditText, android.view.inputmethod.InputMethodManager.SHOW_FORCED)
+                
+                // Step 4: Wait for IME connection, then type actual text to activate InputConnection
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        // Simulate actual typing with text commitment
+                        tempEditText.setText(" ")
+                        Log.d(TAG, "Committed text to EditText to establish InputConnection")
+                        
+                        // Dispatch key events as well for good measure
+                        val keyEvent = android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_SPACE)
+                        tempEditText.dispatchKeyEvent(keyEvent)
+                        val keyEventUp = android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_SPACE)
+                        tempEditText.dispatchKeyEvent(keyEventUp)
+                        
+                        Log.d(TAG, "Simulated key event after text commit")
+                        
+                        // Step 5: Wait for clipboard system to activate, then clean up
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            imm?.hideSoftInputFromWindow(tempEditText.windowToken, 0)
+                            rootView?.removeView(tempEditText)
+                            
+                            // Restore aggressive IME blocking
+                            window.setFlags(
+                                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+                                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                            )
+                            window.setSoftInputMode(
+                                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+                                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+                            )
+                            
+                            Log.d(TAG, "Clipboard system activated via real InputConnection and IME blocking restored")
+                        }, 1)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error simulating text input", e)
+                        rootView?.removeView(tempEditText)
+                        // Restore flags on error
+                        window.setFlags(originalFlags, originalFlags)
+                    }
+                }, 1)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error activating clipboard system", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error starting clipboard monitoring", e)
         }
