@@ -862,7 +862,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get antennaIdentification => 'Antenna/Access Point Identification';
 
   @override
-  String get bssidMacAntenna => 'BSSID (Antenna MAC)';
+  String get bssidRouterMac => 'BSSID (Router MAC)';
+
+  @override
+  String get deviceMacAddress => 'Device MAC Address';
 
   @override
   String get manufacturer => 'Manufacturer';

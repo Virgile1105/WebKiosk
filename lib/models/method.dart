@@ -92,3 +92,66 @@ Future<void> saveSapRessource(String sapRessource) async {
     log('Error saving SAP ressource: $error');
   }
 }
+
+Future<bool> loadUseCustomKeyboard() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('use_custom_keyboard') ?? false;
+  } catch (e) {
+    log('Error loading useCustomKeyboard: $e');
+    return false;
+  }
+}
+
+Future<void> saveUseCustomKeyboard(bool value) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('use_custom_keyboard', value);
+    final deviceInfo = DeviceInfo();
+    deviceInfo.useCustomKeyboard = value;
+  } catch (error) {
+    log('Error saving useCustomKeyboard: $error');
+  }
+}
+
+Future<bool> loadDisableCopyPaste() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('disable_copy_paste') ?? false;
+  } catch (e) {
+    log('Error loading disableCopyPaste: $e');
+    return false;
+  }
+}
+
+Future<void> saveDisableCopyPaste(bool value) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('disable_copy_paste', value);
+    final deviceInfo = DeviceInfo();
+    deviceInfo.disableCopyPaste = value;
+  } catch (error) {
+    log('Error saving disableCopyPaste: $error');
+  }
+}
+
+Future<bool> loadEnableWarningSound() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('enable_warning_sound') ?? false;
+  } catch (e) {
+    log('Error loading enableWarningSound: $e');
+    return false;
+  }
+}
+
+Future<void> saveEnableWarningSound(bool value) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_warning_sound', value);
+    final deviceInfo = DeviceInfo();
+    deviceInfo.enableWarningSound = value;
+  } catch (error) {
+    log('Error saving enableWarningSound: $error');
+  }
+}

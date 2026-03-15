@@ -26,6 +26,12 @@ class FirebaseDataManagement {
           'sapUser=${deviceInfo.sapUser}, '
           'trigger=${trigger?.name ?? "unknown"}');
 
+      // Overwrite the Devices/{serialNumber} document with latest deviceInfo
+      await FirebaseFirestore.instance
+          .collection('Devices')
+          .doc(deviceInfo.serialNumber)
+          .set(deviceInfo.toFirestore(trigger: trigger));
+
       // Create new document in Devices/{serialNumber}/Logs subcollection
       await FirebaseFirestore.instance
           .collection('Devices')

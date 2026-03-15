@@ -15,6 +15,7 @@ import '../utils/logger.dart';
 import '../models/shortcut_item.dart';
 import '../models/method.dart';
 import '../models/class.dart';
+import '../models/device_info.dart';
 import '../generated/l10n/app_localizations.dart';
 import 'password_dialog.dart';
 import 'webview_settings_screen.dart';
@@ -213,6 +214,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
       _useCustomKeyboardRuntime = widget.useCustomKeyboard;
       _disableCopyPasteRuntime = widget.disableCopyPaste;
       _enableWarningSoundRuntime = widget.enableWarningSound;
+      
+      // Update DeviceInfo singleton with current shortcut settings
+      _updateDeviceInfoSettings();
+      
       _isWedgeInputEnabled = false; // Default to false, will be loaded from prefs
       _audioPlayer = AudioPlayer();
       _initializeWebView();
@@ -272,6 +277,18 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         }
       });
     }
+  }
+  
+  /// Update DeviceInfo singleton with current shortcut settings
+  void _updateDeviceInfoSettings() {
+    final deviceInfo = DeviceInfo();
+    deviceInfo.useCustomKeyboard = _useCustomKeyboardRuntime;
+    deviceInfo.disableCopyPaste = _disableCopyPasteRuntime;
+    deviceInfo.enableWarningSound = _enableWarningSoundRuntime;
+    log('DeviceInfo updated with shortcut settings: '
+        'useCustomKeyboard=$_useCustomKeyboardRuntime, '
+        'disableCopyPaste=$_disableCopyPasteRuntime, '
+        'enableWarningSound=$_enableWarningSoundRuntime');
   }
   
   /// Resets keyboard state on initialization
@@ -558,6 +575,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
         log('Warning sound setting saved: $enabled');
       }
+      
+      // Also update DeviceInfo singleton
+      await saveEnableWarningSound(enabled);
     } catch (error, stackTrace) {
       log('Error saving warning sound setting: $error');
       log('Stack trace: $stackTrace');
@@ -596,6 +616,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
         log('Custom keyboard setting saved: $enabled');
       }
+      
+      // Also update DeviceInfo singleton
+      await saveUseCustomKeyboard(enabled);
     } catch (error, stackTrace) {
       log('Error saving custom keyboard setting: $error');
       log('Stack trace: $stackTrace');
@@ -634,6 +657,9 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
         await prefs.setString('shortcuts', ShortcutItem.encodeList(shortcuts));
         log('Copy/Paste setting saved: $disabled');
       }
+      
+      // Also update DeviceInfo singleton
+      await saveDisableCopyPaste(disabled);
     } catch (error, stackTrace) {
       log('Error saving copy/paste setting: $error');
       log('Stack trace: $stackTrace');
@@ -2417,6 +2443,9 @@ Widget _buildSavedNetworkItem(dynamic network) {
             await _saveCustomKeyboardSetting(useCustomKeyboard);
             await _saveCopyPasteSetting(disableCopyPaste);
             await _saveWarningSoundSetting(enableWarningSound);
+            
+            // Update DeviceInfo singleton with new settings
+            _updateDeviceInfoSettings();
             
             // Reload page to apply copy/paste changes if it changed
             if (disableCopyPaste != oldDisableCopyPaste) {

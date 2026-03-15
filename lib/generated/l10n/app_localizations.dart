@@ -1694,11 +1694,17 @@ abstract class AppLocalizations {
   /// **'Antenna/Access Point Identification'**
   String get antennaIdentification;
 
-  /// No description provided for @bssidMacAntenna.
+  /// No description provided for @bssidRouterMac.
   ///
   /// In en, this message translates to:
-  /// **'BSSID (Antenna MAC)'**
-  String get bssidMacAntenna;
+  /// **'BSSID (Router MAC)'**
+  String get bssidRouterMac;
+
+  /// No description provided for @deviceMacAddress.
+  ///
+  /// In en, this message translates to:
+  /// **'Device MAC Address'**
+  String get deviceMacAddress;
 
   /// No description provided for @manufacturer.
   ///

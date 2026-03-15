@@ -895,19 +895,19 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                       child: Column(
                         children: [
                           if (_wifiInfo!['currentNetwork']['bssid'] != null)
-                            _buildInfoRow(l10n.bssidMacAntenna, _wifiInfo!['currentNetwork']['bssid'].toString(), isHighlight: true),
+                            _buildInfoRow(l10n.bssidRouterMac, _wifiInfo!['currentNetwork']['bssid'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['routerManufacturer'] != null)
                             _buildInfoRow(l10n.manufacturer, _wifiInfo!['currentNetwork']['routerManufacturer'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['gateway'] != null)
                             _buildInfoRow(l10n.gatewayRouterIp, _wifiInfo!['currentNetwork']['gateway'].toString(), isHighlight: true),
                           if (_wifiInfo!['currentNetwork']['channel'] != null)
-                            _buildInfoRow(l10n.wifiChannel, '${l10n.channel} ${_wifiInfo!['currentNetwork']['channel']}'),
+                            _buildInfoRow(l10n.wifiChannel, l10n.channel(_wifiInfo!['currentNetwork']['channel'])),
                           if (_wifiInfo!['currentNetwork']['channelWidth'] != null)
                             _buildInfoRow(l10n.channelWidth, _wifiInfo!['currentNetwork']['channelWidth'].toString()),
                           if (_wifiInfo!['currentNetwork']['frequencyBand'] != null)
                             _buildInfoRow(l10n.band, _wifiInfo!['currentNetwork']['frequencyBand'].toString()),
                           if (_wifiInfo!['currentNetwork']['frequency'] != null)
-                            _buildInfoRow(l10n.frequency, '${_wifiInfo!['currentNetwork']['frequency']} ${l10n.frequencyMhz}'),
+                            _buildInfoRow(l10n.frequency, l10n.frequencyMhz(_wifiInfo!['currentNetwork']['frequency'])),
                           if (_wifiInfo!['currentNetwork']['rssi'] != null)
                             _buildSignalRow(_wifiInfo!['currentNetwork']['rssi']),
                           if (_wifiInfo!['currentNetwork']['securityType'] != null)
@@ -944,13 +944,13 @@ class _NetworkStatusScreenState extends State<NetworkStatusScreen> {
                           if (_wifiInfo!['currentNetwork']['wifiStandard'] != null)
                             _buildInfoRow(l10n.wifiStandard, _wifiInfo!['currentNetwork']['wifiStandard'].toString()),
                           if (_wifiInfo!['currentNetwork']['linkSpeed'] != null)
-                            _buildInfoRow(l10n.currentSpeed, '${_wifiInfo!['currentNetwork']['linkSpeed']} ${l10n.speedMbps}'),
+                            _buildInfoRow(l10n.currentSpeed, l10n.speedMbps(_wifiInfo!['currentNetwork']['linkSpeed'])),
                           if (_wifiInfo!['currentNetwork']['txLinkSpeed'] != null)
-                            _buildInfoRow(l10n.txSpeedUpload, '${_wifiInfo!['currentNetwork']['txLinkSpeed']} ${l10n.speedMbps}'),
+                            _buildInfoRow(l10n.txSpeedUpload, l10n.speedMbps(_wifiInfo!['currentNetwork']['txLinkSpeed'])),
                           if (_wifiInfo!['currentNetwork']['rxLinkSpeed'] != null)
-                            _buildInfoRow(l10n.rxSpeedDownload, '${_wifiInfo!['currentNetwork']['rxLinkSpeed']} ${l10n.speedMbps}'),
+                            _buildInfoRow(l10n.rxSpeedDownload, l10n.speedMbps(_wifiInfo!['currentNetwork']['rxLinkSpeed'])),
                           if (_wifiInfo!['currentNetwork']['maxLinkSpeed'] != null)
-                            _buildInfoRow(l10n.maxSpeed, '${_wifiInfo!['currentNetwork']['maxLinkSpeed']} ${l10n.speedMbps}'),
+                            _buildInfoRow(l10n.maxSpeed, l10n.speedMbps(_wifiInfo!['currentNetwork']['maxLinkSpeed'])),
                           if (_wifiInfo!['currentNetwork']['ipAddress'] != null)
                             _buildInfoRow(l10n.ipAddressTablet, _formatIpAddress(_wifiInfo!['currentNetwork']['ipAddress'])),
                           if (_wifiInfo!['currentNetwork']['dns'] != null)

@@ -46,6 +46,10 @@ class DeviceInfo {
   /// List of paired Bluetooth devices with their connection status
   /// Each entry: {'name': 'Device Name', 'status': 'connected' | 'not connected'}
   List<Map<String, String>> bluetoothDevices = [];
+  /// WebView settings
+  bool useCustomKeyboard = false;
+  bool disableCopyPaste = false;
+  bool enableWarningSound = false;
 
   Future<void> loadFromPlatform() async {
     const platform = MethodChannel('devicegate.app/shortcut');
@@ -66,6 +70,9 @@ class DeviceInfo {
     appDeviceName = await loadAppDeviceName();
     sapUser = await loadSapUser();
     sapRessource = await loadSapRessource();
+    useCustomKeyboard = await loadUseCustomKeyboard();
+    disableCopyPaste = await loadDisableCopyPaste();
+    enableWarningSound = await loadEnableWarningSound();
   }
 
   String get productName => (manufacturer + ' ' + model).trim();
@@ -87,6 +94,9 @@ class DeviceInfo {
       'lastInputTime': lastInputTime ?? Timestamp.now(),
       'sapStatus': sapStatus.name,
       'bluetoothDevices': bluetoothDevices,
+      'useCustomKeyboard': useCustomKeyboard,
+      'disableCopyPaste': disableCopyPaste,
+      'enableWarningSound': enableWarningSound,
       'trigger': trigger?.name ?? 'unknown',
     };
   }

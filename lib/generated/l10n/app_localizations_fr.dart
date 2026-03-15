@@ -888,7 +888,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Identification de l\'antenne/point d\'accès';
 
   @override
-  String get bssidMacAntenna => 'BSSID (MAC Antenne)';
+  String get bssidRouterMac => 'BSSID (MAC Routeur)';
+
+  @override
+  String get deviceMacAddress => 'Adresse MAC de l\'Appareil';
 
   @override
   String get manufacturer => 'Fabricant';
