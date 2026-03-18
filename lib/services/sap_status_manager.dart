@@ -247,6 +247,9 @@ class SapStatusManager {
         'serialNumber': deviceInfo.serialNumber,
         'productName': deviceInfo.productName,
         'bluetoothDevices': deviceInfo.bluetoothDevices.map((d) => '${d['name']}|${d['status']}').join(';'),
+        'useCustomKeyboard': deviceInfo.useCustomKeyboard,
+        'disableCopyPaste': deviceInfo.disableCopyPaste,
+        'enableWarningSound': deviceInfo.enableWarningSound,
       });
     } catch (e) {
       log('SapStatusManager: Error syncing device info to Android: $e');

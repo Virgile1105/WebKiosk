@@ -109,6 +109,9 @@ Future<void> saveUseCustomKeyboard(bool value) async {
     await prefs.setBool('use_custom_keyboard', value);
     final deviceInfo = DeviceInfo();
     deviceInfo.useCustomKeyboard = value;
+    // Update Firestore with device info
+    await FirebaseDataManagement.writeDeviceInfo();
+    log('useCustomKeyboard saved: $value');
   } catch (error) {
     log('Error saving useCustomKeyboard: $error');
   }
@@ -130,6 +133,9 @@ Future<void> saveDisableCopyPaste(bool value) async {
     await prefs.setBool('disable_copy_paste', value);
     final deviceInfo = DeviceInfo();
     deviceInfo.disableCopyPaste = value;
+    // Update Firestore with device info
+    await FirebaseDataManagement.writeDeviceInfo();
+    log('disableCopyPaste saved: $value');
   } catch (error) {
     log('Error saving disableCopyPaste: $error');
   }
@@ -151,6 +157,9 @@ Future<void> saveEnableWarningSound(bool value) async {
     await prefs.setBool('enable_warning_sound', value);
     final deviceInfo = DeviceInfo();
     deviceInfo.enableWarningSound = value;
+    // Update Firestore with device info
+    await FirebaseDataManagement.writeDeviceInfo();
+    log('enableWarningSound saved: $value');
   } catch (error) {
     log('Error saving enableWarningSound: $error');
   }

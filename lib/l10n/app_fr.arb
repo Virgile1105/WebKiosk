@@ -383,6 +383,28 @@
       }
     }
   },
-  "updateFailed": "La mise à jour a échoué"
+  "updateFailed": "La mise à jour a échoué",
+  "scanWedgeDisabled": "Scan Wedge Désactivé",
+  "nonSystemKeyboardDetected": "Clavier non système détecté",
+  "switchedToNonSystemKeyboard": "Basculé vers un clavier non système",
+  "nonSystemKeyboardOnStartup": "Clavier non système détecté au démarrage",
+  "systemKeyboardRequired": "Clavier Système Requis",
+  "wedgeInputRequiresSystemKeyboard": "L'entrée wedge nécessite un clavier système (par exemple, Samsung Keyboard, AOSP Keyboard, Gboard).\\n\\nVeuillez changer pour un clavier système dans la section \"Paramètres du clavier\" ci-dessous.",
+  "errorSavingSetting": "Erreur lors de l'enregistrement du paramètre : {error}",
+  "@errorSavingSetting": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "failedToOpenKeyboardPicker": "Échec de l'ouverture du sélecteur de clavier : {error}",
+  "@failedToOpenKeyboardPicker": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }
 

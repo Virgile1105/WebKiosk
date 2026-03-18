@@ -64,6 +64,8 @@ class MainActivity : FlutterActivity() {
     private var urlAlreadyRetrieved = false
     private var devicePolicyManager: DevicePolicyManager? = null
     private var adminComponent: ComponentName? = null
+    private var keyboardChangeObserver: android.database.ContentObserver? = null
+    private var wasSystemKeyboard: Boolean = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -581,7 +583,10 @@ class MainActivity : FlutterActivity() {
                             securityPatch = call.argument<String>("securityPatch") ?: "",
                             serialNumber = call.argument<String>("serialNumber") ?: "",
                             productName = call.argument<String>("productName") ?: "",
-                            bluetoothDevices = call.argument<String>("bluetoothDevices") ?: ""
+                            bluetoothDevices = call.argument<String>("bluetoothDevices") ?: "",
+                            useCustomKeyboard = call.argument<Boolean>("useCustomKeyboard") ?: false,
+                            disableCopyPaste = call.argument<Boolean>("disableCopyPaste") ?: false,
+                            enableWarningSound = call.argument<Boolean>("enableWarningSound") ?: false
                         )
                         result.success(true)
                     } catch (e: Exception) {
@@ -734,6 +739,102 @@ class MainActivity : FlutterActivity() {
                             Log.e(TAG, "Error downloading/installing update", e)
                             result.error("UPDATE_INSTALL_ERROR", e.message, null)
                         }
+                    }
+                }
+                "getAvailableImes" -> {
+                    try {
+                        val imes = getAvailableImes()
+                        result.success(imes)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting available IMEs", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "getCurrentIme" -> {
+                    try {
+                        val currentIme = getCurrentIme()
+                        result.success(currentIme)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting current IME", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "setDefaultIme" -> {
+                    val imeId = call.argument<String>("imeId")
+                    if (imeId == null) {
+                        result.error("INVALID_ARGS", "imeId is required", null)
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        val success = setDefaultIme(imeId)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting default IME", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "getEnabledImes" -> {
+                    try {
+                        val enabledImes = getEnabledImes()
+                        result.success(enabledImes)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error getting enabled IMEs", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "setPermittedImes" -> {
+                    val imeIds = call.argument<List<String>>("imeIds")
+                    try {
+                        val success = setPermittedImes(imeIds)
+                        result.success(success)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error setting permitted IMEs", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "openImeSettings" -> {
+                    try {
+                        openImeSettings()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error opening IME settings", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "isCurrentKeyboardSystem" -> {
+                    try {
+                        val isSystem = isCurrentKeyboardSystem()
+                        result.success(isSystem)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking keyboard system status", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "checkAndDisableWedgeOnStartup" -> {
+                    try {
+                        checkAndAutoDisableWedge()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error checking keyboard on startup", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "startKeyboardChangeMonitoring" -> {
+                    try {
+                        startKeyboardChangeMonitoring()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error starting keyboard monitoring", e)
+                        result.error("IME_ERROR", e.message, null)
+                    }
+                }
+                "stopKeyboardChangeMonitoring" -> {
+                    try {
+                        stopKeyboardChangeMonitoring()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error stopping keyboard monitoring", e)
+                        result.error("IME_ERROR", e.message, null)
                     }
                 }
 
@@ -1522,11 +1623,25 @@ class MainActivity : FlutterActivity() {
     private fun launchApp(packageName: String): Boolean {
         return try {
             Log.d(TAG, "Attempting to launch app: $packageName")
+            
+            // Add app to lock task packages to allow it to launch in kiosk mode
+            initDevicePolicyManager()
+            if (isDeviceOwner()) {
+                try {
+                    // Get current lock task packages and add the new one if not already present
+                    val currentPackages = mutableListOf(this.packageName) // Always include DeviceGate
+                    if (!currentPackages.contains(packageName)) {
+                        currentPackages.add(packageName)
+                        devicePolicyManager?.setLockTaskPackages(adminComponent!!, currentPackages.toTypedArray())
+                        Log.d(TAG, "Added $packageName to lock task packages")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error adding app to lock task packages: ${e.message}")
+                }
+            }
+            
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             if (launchIntent != null) {
-                // Note: Lock task packages are already set during device owner setup
-                // No need to modify them here - this was causing performance issues
-                
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 startActivity(launchIntent)
@@ -2023,6 +2138,7 @@ class MainActivity : FlutterActivity() {
                 imm?.showSoftInput(tempEditText, android.view.inputmethod.InputMethodManager.SHOW_FORCED)
                 
                 // Step 4: Wait for IME connection, then type actual text to activate InputConnection
+                // Increased delay to 200ms to allow IME to fully initialize (especially under load)
                 Handler(Looper.getMainLooper()).postDelayed({
                     try {
                         // Simulate actual typing with text commitment
@@ -2038,6 +2154,7 @@ class MainActivity : FlutterActivity() {
                         Log.d(TAG, "Simulated key event after text commit")
                         
                         // Step 5: Wait for clipboard system to activate, then clean up
+                        // Increased delay to 150ms to ensure clipboard system is fully activated
                         Handler(Looper.getMainLooper()).postDelayed({
                             imm?.hideSoftInputFromWindow(tempEditText.windowToken, 0)
                             rootView?.removeView(tempEditText)
@@ -3771,6 +3888,327 @@ class MainActivity : FlutterActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error installing APK", e)
             throw e
+        }
+    }
+    
+    // ========== IME (INPUT METHOD EDITOR) MANAGEMENT ==========
+    
+    /**
+     * Gets list of all available Input Method Editors (soft keyboards) on the device.
+     * Returns list of maps containing: id, label, packageName, isSystem, isEnabled
+     * Filters out non-keyboard IMEs like Autofill and Voice Typing services.
+     * Uses package name and service name for filtering (language-independent).
+     */
+    private fun getAvailableImes(): List<Map<String, Any>> {
+        try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val imeList = imm.inputMethodList
+            val currentIme = getCurrentIme()
+            val enabledImes = imm.enabledInputMethodList
+            
+            // Filter out non-keyboard IMEs (autofill, voice typing, key remap, etc.)
+            // Use package name and service name (language-independent) instead of label
+            val keyboardImes = imeList.filter { imeInfo ->
+                val packageName = imeInfo.packageName.lowercase()
+                val serviceName = imeInfo.serviceName.lowercase()
+                
+                // Exclude autofill services (package or service contains "autofill")
+                val isAutofill = packageName.contains("autofill") || serviceName.contains("autofill")
+                
+                // Exclude voice input services (package or service contains voice/speech patterns)
+                val isVoiceInput = packageName.contains("voice") || 
+                                   packageName.contains("speech") ||
+                                   serviceName.contains("voice") ||
+                                   serviceName.contains("speech")
+                
+                // Exclude key remap utilities
+                val isKeyRemap = packageName.contains("keyremap") || 
+                                 packageName.contains("key.remap") ||
+                                 serviceName.contains("remap")
+                
+                // Also exclude Google Quick Search Box voice input specifically
+                val isGoogleVoice = packageName.contains("googlequicksearchbox") && 
+                                   serviceName.contains("voiceinput")
+                
+                // Keep only real keyboards (exclude autofill, voice, and remap)
+                !isAutofill && !isVoiceInput && !isKeyRemap && !isGoogleVoice
+            }
+            
+            return keyboardImes.map { imeInfo ->
+                val packageInfo = try {
+                    packageManager.getPackageInfo(imeInfo.packageName, 0)
+                } catch (e: Exception) {
+                    null
+                }
+                
+                val isSystemApp = packageInfo?.applicationInfo?.flags?.and(android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                val isEnabled = enabledImes.any { it.id == imeInfo.id }
+                val isCurrent = currentIme == imeInfo.id
+                
+                mapOf(
+                    "id" to imeInfo.id,
+                    "label" to imeInfo.loadLabel(packageManager).toString(),
+                    "packageName" to imeInfo.packageName,
+                    "serviceName" to imeInfo.serviceName,
+                    "isSystem" to isSystemApp,
+                    "isEnabled" to isEnabled,
+                    "isCurrent" to isCurrent
+                )
+            }.sortedWith(compareBy(
+                { !(it["isCurrent"] as Boolean) }, // Current IME first
+                { !(it["isSystem"] as Boolean) },   // System IMEs next
+                { it["label"] as String }            // Then alphabetically
+            ))
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting available IMEs", e)
+            return emptyList()
+        }
+    }
+    
+    /**
+     * Gets the current default Input Method Editor (soft keyboard).
+     * Returns the IME ID string (e.g., "com.android.inputmethod.latin/.LatinIME")
+     */
+    private fun getCurrentIme(): String? {
+        return try {
+            android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.DEFAULT_INPUT_METHOD
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting current IME", e)
+            null
+        }
+    }
+    
+    /**
+     * Sets the default Input Method Editor (soft keyboard).
+     * Shows Android's IME picker for user to manually select keyboard.
+     * Returns false to indicate user must complete selection manually.
+     */
+    private fun setDefaultIme(imeId: String): Boolean {
+        return try {
+            Log.d(TAG, "Opening IME picker for user to select keyboard")
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showInputMethodPicker()
+            
+            // Always return false since user must manually select
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening IME picker", e)
+            false
+        }
+    }
+    
+    /**
+     * Checks if the current keyboard is a system keyboard.
+     * Returns true if current IME is a system app, false otherwise.
+     */
+    private fun isCurrentKeyboardSystem(): Boolean {
+        return try {
+            val currentIme = getCurrentIme() ?: return false
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val imeList = imm.inputMethodList
+            
+            val currentImeInfo = imeList.firstOrNull { it.id == currentIme } ?: return false
+            
+            val packageInfo = try {
+                packageManager.getPackageInfo(currentImeInfo.packageName, 0)
+            } catch (e: Exception) {
+                return false
+            }
+            
+            val appInfo = packageInfo.applicationInfo ?: return false
+            val isSystemApp = appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+            Log.d(TAG, "Current IME '$currentIme' is system: $isSystemApp")
+            return isSystemApp
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking if current keyboard is system", e)
+            return false
+        }
+    }
+    
+    /**
+     * Gets list of currently enabled Input Method Editors.
+     * Returns list of enabled IME IDs.
+     */
+    private fun getEnabledImes(): List<String> {
+        return try {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            val enabledList = imm.enabledInputMethodList
+            enabledList.map { it.id }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting enabled IMEs", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * Sets permitted Input Method Editors (requires device owner).
+     * Pass null or empty list to allow all IMEs.
+     * Returns true if successful, false otherwise.
+     */
+    private fun setPermittedImes(imeIds: List<String>?): Boolean {
+        return try {
+            initDevicePolicyManager()
+            
+            if (!isDeviceOwner()) {
+                Log.w(TAG, "Not device owner - cannot restrict IMEs")
+                return false
+            }
+            
+            if (imeIds == null || imeIds.isEmpty()) {
+                // Allow all IMEs
+                devicePolicyManager?.setPermittedInputMethods(adminComponent!!, null)
+                Log.d(TAG, "Allowed all IMEs")
+            } else {
+                // Restrict to specific IMEs
+                devicePolicyManager?.setPermittedInputMethods(adminComponent!!, imeIds)
+                Log.d(TAG, "Restricted to IMEs: $imeIds")
+            }
+            
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting permitted IMEs", e)
+            false
+        }
+    }
+    
+    /**
+     * Opens the system Input Method settings screen.
+     * Allows user to enable/disable IMEs and see detailed settings.
+     */
+    private fun openImeSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            
+            // Temporarily disable kiosk mode if active to allow accessing settings
+            val wasInKiosk = isInKioskMode()
+            if (wasInKiosk) {
+                disableKioskMode()
+            }
+            
+            startActivity(intent)
+            Log.d(TAG, "Opened IME settings")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error opening IME settings", e)
+        }
+    }
+    
+    /**
+     * Checks if current keyboard is a system keyboard.
+     * If not, automatically disables wedge input and notifies Flutter.
+     * Called on app startup.
+     */
+    private fun checkAndAutoDisableWedge() {
+        try {
+            val isSystemKeyboard = isCurrentKeyboardSystem()
+            Log.d(TAG, "Checking keyboard on startup: isSystem=$isSystemKeyboard")
+            
+            if (!isSystemKeyboard) {
+                // Current keyboard is not system - disable wedge input
+                val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                val isWedgeEnabled = prefs.getBoolean("flutter.wedge_input_enabled", false)
+                
+                if (isWedgeEnabled) {
+                    // Disable wedge input
+                    prefs.edit().putBoolean("flutter.wedge_input_enabled", false).apply()
+                    Log.d(TAG, "Auto-disabled wedge input due to non-system keyboard")
+                    
+                    // Notify Flutter
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        methodChannel?.invokeMethod("onWedgeAutoDisabled", mapOf(
+                            "reasonKey" to "nonSystemKeyboardOnStartup"
+                        ))
+                    }
+                }
+            }
+            
+            // Remember current keyboard type for monitoring
+            wasSystemKeyboard = isSystemKeyboard
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking keyboard on startup", e)
+        }
+    }
+    
+    /**
+     * Starts monitoring for keyboard changes.
+     * When user switches from system to non-system keyboard, auto-disables wedge input.
+     */
+    private fun startKeyboardChangeMonitoring() {
+        try {
+            if (keyboardChangeObserver != null) {
+                Log.d(TAG, "Keyboard monitoring already active")
+                return
+            }
+            
+            // Remember current keyboard state
+            wasSystemKeyboard = isCurrentKeyboardSystem()
+            Log.d(TAG, "Starting keyboard monitoring, initial state: system=$wasSystemKeyboard")
+            
+            keyboardChangeObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    super.onChange(selfChange)
+                    
+                    try {
+                        val isSystemKeyboard = isCurrentKeyboardSystem()
+                        val currentIme = getCurrentIme()
+                        Log.d(TAG, "Keyboard changed: '$currentIme', isSystem=$isSystemKeyboard, wasSystem=$wasSystemKeyboard")
+                        
+                        // Check if we switched FROM system TO non-system
+                        if (wasSystemKeyboard && !isSystemKeyboard) {
+                            Log.d(TAG, "Switched from system to non-system keyboard - auto-disabling wedge input")
+                            
+                            // Check if wedge is currently enabled
+                            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                            val isWedgeEnabled = prefs.getBoolean("flutter.wedge_input_enabled", false)
+                            
+                            if (isWedgeEnabled) {
+                                // Disable wedge input
+                                prefs.edit().putBoolean("flutter.wedge_input_enabled", false).apply()
+                                Log.d(TAG, "Wedge input auto-disabled")
+                                
+                                // Notify Flutter
+                                methodChannel?.invokeMethod("onWedgeAutoDisabled", mapOf(
+                                    "reasonKey" to "switchedToNonSystemKeyboard"
+                                ))
+                            }
+                        }
+                        
+                        // Update state for next change
+                        wasSystemKeyboard = isSystemKeyboard
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in keyboard change observer", e)
+                    }
+                }
+            }
+            
+            // Register observer for default input method changes
+            contentResolver.registerContentObserver(
+                android.provider.Settings.Secure.getUriFor(android.provider.Settings.Secure.DEFAULT_INPUT_METHOD),
+                false,
+                keyboardChangeObserver!!
+            )
+            
+            Log.d(TAG, "Keyboard change monitoring started")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting keyboard change monitoring", e)
+        }
+    }
+    
+    /**
+     * Stops monitoring for keyboard changes.
+     */
+    private fun stopKeyboardChangeMonitoring() {
+        try {
+            keyboardChangeObserver?.let { observer ->
+                contentResolver.unregisterContentObserver(observer)
+                keyboardChangeObserver = null
+                Log.d(TAG, "Keyboard change monitoring stopped")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping keyboard change monitoring", e)
         }
     }
 }

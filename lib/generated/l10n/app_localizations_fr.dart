@@ -1146,4 +1146,35 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get updateFailed => 'La mise à jour a échoué';
+
+  @override
+  String get scanWedgeDisabled => 'Scan Wedge Désactivé';
+
+  @override
+  String get nonSystemKeyboardDetected => 'Clavier non système détecté';
+
+  @override
+  String get switchedToNonSystemKeyboard =>
+      'Basculé vers un clavier non système';
+
+  @override
+  String get nonSystemKeyboardOnStartup =>
+      'Clavier non système détecté au démarrage';
+
+  @override
+  String get systemKeyboardRequired => 'Clavier Système Requis';
+
+  @override
+  String get wedgeInputRequiresSystemKeyboard =>
+      'L\'entrée wedge nécessite un clavier système (par exemple, Samsung Keyboard, AOSP Keyboard, Gboard).\\n\\nVeuillez changer pour un clavier système dans la section \"Paramètres du clavier\" ci-dessous.';
+
+  @override
+  String errorSavingSetting(String error) {
+    return 'Erreur lors de l\'enregistrement du paramètre : $error';
+  }
+
+  @override
+  String failedToOpenKeyboardPicker(String error) {
+    return 'Échec de l\'ouverture du sélecteur de clavier : $error';
+  }
 }

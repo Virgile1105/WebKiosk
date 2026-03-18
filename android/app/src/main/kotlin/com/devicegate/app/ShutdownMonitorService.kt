@@ -47,6 +47,9 @@ class ShutdownMonitorService : Service() {
         private const val KEY_SECURITY_PATCH = "securityPatch"
         private const val KEY_BLUETOOTH_DEVICES = "bluetoothDevices"
         private const val KEY_PRODUCT_NAME = "productName"
+        private const val KEY_USE_CUSTOM_KEYBOARD = "useCustomKeyboard"
+        private const val KEY_DISABLE_COPY_PASTE = "disableCopyPaste"
+        private const val KEY_ENABLE_WARNING_SOUND = "enableWarningSound"
         
         /**
          * Save the serial number to SharedPreferences.
@@ -74,7 +77,10 @@ class ShutdownMonitorService : Service() {
             securityPatch: String,
             serialNumber: String,
             productName: String,
-            bluetoothDevices: String
+            bluetoothDevices: String,
+            useCustomKeyboard: Boolean,
+            disableCopyPaste: Boolean,
+            enableWarningSound: Boolean
         ) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             prefs.edit()
@@ -91,6 +97,9 @@ class ShutdownMonitorService : Service() {
                 .putString(KEY_SERIAL_NUMBER, serialNumber)
                 .putString(KEY_PRODUCT_NAME, productName)
                 .putString(KEY_BLUETOOTH_DEVICES, bluetoothDevices)
+                .putBoolean(KEY_USE_CUSTOM_KEYBOARD, useCustomKeyboard)
+                .putBoolean(KEY_DISABLE_COPY_PASTE, disableCopyPaste)
+                .putBoolean(KEY_ENABLE_WARNING_SOUND, enableWarningSound)
                 .apply()
             Log.d(TAG, "ShutdownMonitorService: Saved device info - sapStatus=$sapStatus, sapUser=$sapUser, serial=$serialNumber")
         }
@@ -218,6 +227,9 @@ class ShutdownMonitorService : Service() {
         val securityPatch = prefs.getString(KEY_SECURITY_PATCH, "") ?: ""
         val productName = prefs.getString(KEY_PRODUCT_NAME, "") ?: ""
         val bluetoothDevices = prefs.getString(KEY_BLUETOOTH_DEVICES, "") ?: ""
+        val useCustomKeyboard = prefs.getBoolean(KEY_USE_CUSTOM_KEYBOARD, false)
+        val disableCopyPaste = prefs.getBoolean(KEY_DISABLE_COPY_PASTE, false)
+        val enableWarningSound = prefs.getBoolean(KEY_ENABLE_WARNING_SOUND, false)
         
         Log.d(TAG, "ShutdownMonitorService: serial=$serialNumber, sapStatus=$sapStatus, sapUser=$sapUser")
         
@@ -245,7 +257,10 @@ class ShutdownMonitorService : Service() {
             androidVersion,
             securityPatch,
             productName,
-            bluetoothDevices
+            bluetoothDevices,
+            useCustomKeyboard,
+            disableCopyPaste,
+            enableWarningSound
         )
         
         // Update SharedPreferences
@@ -264,7 +279,10 @@ class ShutdownMonitorService : Service() {
         androidVersion: String,
         securityPatch: String,
         productName: String,
-        bluetoothDevices: String
+        bluetoothDevices: String,
+        useCustomKeyboard: Boolean,
+        disableCopyPaste: Boolean,
+        enableWarningSound: Boolean
     ) {
         try {
             // Initialize Firebase if needed
@@ -274,19 +292,22 @@ class ShutdownMonitorService : Service() {
             }
             
             val db = FirebaseFirestore.getInstance()
-            val logsRef = db.collection("Devices").document(serialNumber).collection("Logs")
+            val deviceRef = db.collection("Devices").document(serialNumber)
+            val logsRef = deviceRef.collection("Logs")
             
-            // Use a latch to wait synchronously
-            val latch = CountDownLatch(1)
+            // Use two latches - one for main doc, one for log
+            val mainLatch = CountDownLatch(1)
+            val logLatch = CountDownLatch(1)
             
             // Parse bluetooth devices from "name|status;name|status" format to list of maps
+            // On shutdown, set all devices to "not connected"
             val bluetoothList = if (bluetoothDevices.isNotEmpty()) {
                 bluetoothDevices.split(";").mapNotNull { device ->
                     val parts = device.split("|")
                     if (parts.size >= 2) {
                         hashMapOf(
                             "name" to parts[0],
-                            "status" to parts[1]
+                            "status" to "not connected"
                         )
                     } else null
                 }
@@ -309,26 +330,45 @@ class ShutdownMonitorService : Service() {
                 "productName" to productName,
                 "bluetoothDevices" to bluetoothList,
                 "lastInputTime" to Timestamp.now(),
+                "useCustomKeyboard" to useCustomKeyboard,
+                "disableCopyPaste" to disableCopyPaste,
+                "enableWarningSound" to enableWarningSound,
                 "trigger" to "shutdown"
             )
             
             Log.d(TAG, "ShutdownMonitorService: Writing to Firestore with trigger=shutdown...")
             
-            logsRef.add(logEntry)
+            // Write to main document (overwrites)
+            deviceRef.set(logEntry)
                 .addOnSuccessListener {
-                    Log.d(TAG, "ShutdownMonitorService: Firestore update SUCCESS")
-                    latch.countDown()
+                    Log.d(TAG, "ShutdownMonitorService: Main document update SUCCESS")
+                    mainLatch.countDown()
                 }
                 .addOnFailureListener { e ->
-                    Log.e(TAG, "ShutdownMonitorService: Firestore update FAILED: ${e.message}")
-                    latch.countDown()
+                    Log.e(TAG, "ShutdownMonitorService: Main document update FAILED: ${e.message}")
+                    mainLatch.countDown()
                 }
             
-            // Wait up to 5 seconds for completion
-            val completed = latch.await(5, TimeUnit.SECONDS)
+            // Write to Logs subcollection (adds new entry)
+            logsRef.add(logEntry)
+                .addOnSuccessListener {
+                    Log.d(TAG, "ShutdownMonitorService: Logs subcollection update SUCCESS")
+                    logLatch.countDown()
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "ShutdownMonitorService: Logs subcollection update FAILED: ${e.message}")
+                    logLatch.countDown()
+                }
             
-            if (!completed) {
-                Log.w(TAG, "ShutdownMonitorService: Firestore update timed out")
+            // Wait up to 5 seconds for both to complete
+            val mainCompleted = mainLatch.await(5, TimeUnit.SECONDS)
+            val logCompleted = logLatch.await(5, TimeUnit.SECONDS)
+            
+            if (!mainCompleted) {
+                Log.w(TAG, "ShutdownMonitorService: Main document update timed out")
+            }
+            if (!logCompleted) {
+                Log.w(TAG, "ShutdownMonitorService: Logs update timed out")
             }
             
         } catch (e: Exception) {

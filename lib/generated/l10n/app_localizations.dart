@@ -2143,6 +2143,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Update failed'**
   String get updateFailed;
+
+  /// No description provided for @scanWedgeDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan Wedge Disabled'**
+  String get scanWedgeDisabled;
+
+  /// No description provided for @nonSystemKeyboardDetected.
+  ///
+  /// In en, this message translates to:
+  /// **'Non-system keyboard detected'**
+  String get nonSystemKeyboardDetected;
+
+  /// No description provided for @switchedToNonSystemKeyboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Switched to non-system keyboard'**
+  String get switchedToNonSystemKeyboard;
+
+  /// No description provided for @nonSystemKeyboardOnStartup.
+  ///
+  /// In en, this message translates to:
+  /// **'Non-system keyboard detected on startup'**
+  String get nonSystemKeyboardOnStartup;
+
+  /// No description provided for @systemKeyboardRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'System Keyboard Required'**
+  String get systemKeyboardRequired;
+
+  /// No description provided for @wedgeInputRequiresSystemKeyboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Wedge input requires a system keyboard (e.g., Samsung Keyboard, AOSP Keyboard, Gboard).\\n\\nPlease change to a system keyboard in the \"Keyboard Settings\" section below.'**
+  String get wedgeInputRequiresSystemKeyboard;
+
+  /// No description provided for @errorSavingSetting.
+  ///
+  /// In en, this message translates to:
+  /// **'Error saving setting: {error}'**
+  String errorSavingSetting(String error);
+
+  /// No description provided for @failedToOpenKeyboardPicker.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to open keyboard picker: {error}'**
+  String failedToOpenKeyboardPicker(String error);
 }
 
 class _AppLocalizationsDelegate
