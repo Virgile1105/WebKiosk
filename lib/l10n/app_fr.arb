@@ -405,6 +405,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "sslDialogTitle": "Site non sécurisé",
+  "sslDialogMessage": "Autorité de certificat non fiable !",
+  "sslDialogCancel": "ANNULER",
+  "sslDialogContinue": "CONTINUER",
+  "sslDialogAlwaysAllow": "AUTORISER TOUJOURS"
 }
 

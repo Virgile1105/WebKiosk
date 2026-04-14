@@ -1147,4 +1147,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String failedToOpenKeyboardPicker(String error) {
     return 'Failed to open keyboard picker: $error';
   }
+
+  @override
+  String get sslDialogTitle => 'Untrusted site';
+
+  @override
+  String get sslDialogMessage => 'Untrusted certificate authority!';
+
+  @override
+  String get sslDialogCancel => 'CANCEL';
+
+  @override
+  String get sslDialogContinue => 'CONTINUE';
+
+  @override
+  String get sslDialogAlwaysAllow => 'ALWAYS ALLOW';
 }

@@ -2191,6 +2191,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to open keyboard picker: {error}'**
   String failedToOpenKeyboardPicker(String error);
+
+  /// No description provided for @sslDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Untrusted site'**
+  String get sslDialogTitle;
+
+  /// No description provided for @sslDialogMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Untrusted certificate authority!'**
+  String get sslDialogMessage;
+
+  /// No description provided for @sslDialogCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'CANCEL'**
+  String get sslDialogCancel;
+
+  /// No description provided for @sslDialogContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'CONTINUE'**
+  String get sslDialogContinue;
+
+  /// No description provided for @sslDialogAlwaysAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'ALWAYS ALLOW'**
+  String get sslDialogAlwaysAllow;
 }
 
 class _AppLocalizationsDelegate

@@ -2,6 +2,7 @@ import 'package:devicegate/services/firebaseDataManagement.dart';
 import 'package:devicegate/services/sap_status_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart' show AndroidSslAuthError;
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
@@ -923,6 +924,74 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                   ),
                 ),
               );
+            }
+          },
+          onSslAuthError: (SslAuthError error) async {
+            if (!mounted) {
+              await error.cancel();
+              return;
+            }
+            // Check if this host was previously trusted with "AUTORISER TOUJOURS"
+            final androidError = error.platform as AndroidSslAuthError;
+            final host = Uri.tryParse(androidError.url)?.host ?? androidError.url;
+            final prefs = await SharedPreferences.getInstance();
+            final trustedHosts = prefs.getStringList('ssl_trusted_hosts') ?? [];
+            if (trustedHosts.contains(host)) {
+              await error.proceed();
+              return;
+            }
+            if (!mounted) {
+              await error.cancel();
+              return;
+            }
+            // 0 = cancel, 1 = continuer, 2 = autoriser toujours
+            final l10n = AppLocalizations.of(context)!;
+            final choice = await showDialog<int>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                title: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Text(l10n.sslDialogTitle),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${l10n.sslDialogMessage}\n\n${error.platform.description}',
+                    ),
+                    const SizedBox(height: 8),
+                    Text(androidError.url, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, 0),
+                    child: Text(l10n.sslDialogCancel),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, 1),
+                    child: Text(l10n.sslDialogContinue, style: const TextStyle(color: Colors.orange)),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, 2),
+                    child: Text(l10n.sslDialogAlwaysAllow, style: const TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+            );
+            if (choice == 2) {
+              trustedHosts.add(host);
+              await prefs.setStringList('ssl_trusted_hosts', trustedHosts);
+              await error.proceed();
+            } else if (choice == 1) {
+              await error.proceed();
+            } else {
+              await error.cancel();
             }
           },
         ),

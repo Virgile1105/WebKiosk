@@ -1177,4 +1177,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String failedToOpenKeyboardPicker(String error) {
     return 'Échec de l\'ouverture du sélecteur de clavier : $error';
   }
+
+  @override
+  String get sslDialogTitle => 'Site non sécurisé';
+
+  @override
+  String get sslDialogMessage => 'Autorité de certificat non fiable !';
+
+  @override
+  String get sslDialogCancel => 'ANNULER';
+
+  @override
+  String get sslDialogContinue => 'CONTINUER';
+
+  @override
+  String get sslDialogAlwaysAllow => 'AUTORISER TOUJOURS';
 }

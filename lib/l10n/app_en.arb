@@ -404,5 +404,10 @@
         "type": "String"
       }
     }
-  }
+  },
+  "sslDialogTitle": "Untrusted site",
+  "sslDialogMessage": "Untrusted certificate authority!",
+  "sslDialogCancel": "CANCEL",
+  "sslDialogContinue": "CONTINUE",
+  "sslDialogAlwaysAllow": "ALWAYS ALLOW"
 }
