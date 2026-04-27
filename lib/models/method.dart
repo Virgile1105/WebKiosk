@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import 'device_info.dart';
 import '../services/firebaseDataManagement.dart';
+import '../services/sap_status_manager.dart';
 
 Future<String> loadAppVersion() async {
   try {
@@ -51,6 +52,9 @@ Future<void> saveSapUser(String sapUser) async {
     final deviceInfo = DeviceInfo();
     deviceInfo.sapUser = sapUser;
     log('SAP user saved: $sapUser');
+    
+    // Sync to Android native prefs so ShutdownMonitorService sees the updated user
+    SapStatusManager().syncAllDeviceInfoToAndroid();
     
     // Update Firestore with device info
     final trigger = sapUser.isEmpty ? LogTrigger.logout : LogTrigger.login;

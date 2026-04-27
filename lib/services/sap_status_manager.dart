@@ -36,7 +36,7 @@ class SapStatusManager {
       log('SapStatusManager: Entered SAP EWM (previous: ${previousStatus.name}, new: active)');
       
       // Sync all device info to Android for shutdown detection
-      _syncAllDeviceInfoToAndroid();
+      syncAllDeviceInfoToAndroid();
       
       // Write to Firestore if status changed
       if (previousStatus != SapStatus.active) {
@@ -60,7 +60,7 @@ class SapStatusManager {
       log('SapStatusManager: Left SAP EWM (previous: ${previousStatus.name}, new: off)');
       
       // Sync all device info to Android for shutdown detection
-      _syncAllDeviceInfoToAndroid();
+      syncAllDeviceInfoToAndroid();
       
       // Write to Firestore if status changed
       if (previousStatus != SapStatus.off) {
@@ -224,13 +224,13 @@ class SapStatusManager {
     log('SapStatusManager: Writing to Firestore - status: ${deviceInfo.sapStatus.name}, trigger: ${trigger.name}');
     
     // Sync all device info to Android for shutdown detection
-    _syncAllDeviceInfoToAndroid();
+    syncAllDeviceInfoToAndroid();
     
     FirebaseDataManagement.writeDeviceInfo(trigger: trigger);
   }
 
   /// Sync all device info to Android SharedPreferences for shutdown detection
-  void _syncAllDeviceInfoToAndroid() {
+  void syncAllDeviceInfoToAndroid() {
     try {
       final deviceInfo = DeviceInfo();
       _platform.invokeMethod('saveDeviceInfo', {

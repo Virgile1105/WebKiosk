@@ -1792,8 +1792,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           final String title;
                                           final String subtitle;
                                           
-                                          if (websiteIsSuccess && websiteCanConnect) {
+                                          if (websiteIsSuccess && websiteCanConnect ||
+                                              websiteError == 'ssl_error') {
                                             // State 3: Website is accessible - Internet OK
+                                            // ssl_error means the server IS reachable; the WebView handles the cert fine
                                             bgColor = Colors.green.shade50;
                                             borderColor = Colors.green.shade200;
                                             iconColor = Colors.green;
@@ -1809,6 +1811,7 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                                           // - connection_refused: Server actively refused connection (internet works)
                                           // - connection_reset: Connection was reset by server (internet works)
                                           // - timed_out: Server not responding but DNS resolved (internet works)
+                                          // - ssl_error: Self-signed/untrusted cert (internet works, WebView handles it)
                                           // - HTTP error codes 4xx/5xx (internet works)
                                           bgColor = Colors.orange.shade50;
                                           borderColor = Colors.orange.shade200;
@@ -1906,11 +1909,13 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
                           // Check if WiFi is connected
                           final hasWifiConnection = _wifiInfo?['currentNetwork'] != null;
                           // Check if Internet is OK
+                          // Use hasInternet (8.8.8.8 TCP test) as the gate — it has no SSL involvement.
+                          // websiteCanConnect is also accepted for non-SSL failures.
+                          // This prevents a self-signed SAP cert from permanently disabling buttons.
+                          final hasInternet = _wifiInfo?['hasInternet'] == true;
                           final websiteCanConnect = _websiteStatus?['canConnect'] == true;
-                          final websiteIsSuccess = _websiteStatus?['isSuccess'] == true;
-                          final internetIsOk = websiteIsSuccess && websiteCanConnect;
-                          // Enable buttons only when both WiFi and Internet are OK
-                          final buttonsEnabled = hasWifiConnection && internetIsOk;
+                          final hasInternetConnectivity = hasInternet || websiteCanConnect;
+                          final buttonsEnabled = hasWifiConnection && hasInternetConnectivity;
                           // Capture the resetting state in the Builder
                           final isResetting = _isResettingInternet;
                           
@@ -2073,6 +2078,27 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               },
             ),
           ],
+
+          // Wide left-edge swipe zone to open drawer.
+          // Covers left 50% of screen so it's reachable even with a phone case.
+          // HitTestBehavior.translucent lets taps pass through to the WebView;
+          // only a right-swipe with sufficient velocity opens the drawer.
+          Builder(
+            builder: (context) => Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: MediaQuery.of(context).size.width * 0.5,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity != null && details.primaryVelocity! > 300) {
+                    Scaffold.of(context).openDrawer();
+                  }
+                },
+              ),
+            ),
+          ),
         ],
       ),
       // Left swipe drawer menu

@@ -2545,7 +2545,9 @@ class MainActivity : FlutterActivity() {
             wifiInfo["savedNetworks"] = configuredNetworks
             
             // Check actual internet connectivity (independent of WiFi status)
-            wifiInfo["hasInternet"] = checkInternetConnectivity()
+            val hasInternet = checkInternetConnectivity()
+            wifiInfo["hasInternet"] = hasInternet
+            Log.i(TAG, "checkInternetConnectivity result: hasInternet=$hasInternet")
             
         } catch (e: Exception) {
             Log.e(TAG, "Error getting WiFi info", e)
@@ -2614,6 +2616,15 @@ class MainActivity : FlutterActivity() {
                     status["isSuccess"] = false
                     status["error"] = "timed_out"
                     status["errorMessage"] = "Connection timed out"
+                } catch (e: javax.net.ssl.SSLException) {
+                    // SSL error means the server IS reachable but the certificate is
+                    // not trusted by Java's HttpURLConnection (e.g. self-signed cert).
+                    // The WebView handles this separately via onSslAuthError.
+                    status["canConnect"] = true
+                    status["isSuccess"] = false
+                    status["error"] = "ssl_error"
+                    status["errorMessage"] = "SSL certificate error"
+                    android.util.Log.i("DeviceGate", "checkWebsiteStatus: SSLException -> ssl_error, canConnect=true")
                 } catch (e: Exception) {
                     // Check exception message to identify connection refused errors
                     val errorMsg = e.message?.lowercase() ?: ""
@@ -2646,6 +2657,7 @@ class MainActivity : FlutterActivity() {
             
             thread.start()
             thread.join(3500) // Wait max 3.5 seconds for thread to complete (3s timeout + 0.5s buffer)
+            android.util.Log.i("DeviceGate", "checkWebsiteStatus result: canConnect=${status["canConnect"]}, isSuccess=${status["isSuccess"]}, error=${status["error"]}")
             
             if (thread.isAlive) {
                 // Thread didn't finish in time
