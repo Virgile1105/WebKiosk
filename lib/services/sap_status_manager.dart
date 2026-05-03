@@ -85,8 +85,11 @@ class SapStatusManager {
       
       log('SapStatusManager: Page changed (current status: ${previousStatus.name})');
       
-      // If status was not active, change to active and write to Firestore
-      if (previousStatus != SapStatus.active && previousStatus != SapStatus.off) {
+      // If status was not active, change to active and write to Firestore.
+      // 'off' is included: pushReplacement causes leaveSapEwm (off) to fire AFTER
+      // the new screen's enterSapEwm, so the page load is the only reliable moment
+      // to recover from off → active in the reload scenario.
+      if (previousStatus != SapStatus.active) {
         deviceInfo.sapStatus = SapStatus.active;
         log('SapStatusManager: Status changed from ${previousStatus.name} to active');
         _writeStatusToFirestore(LogTrigger.pageChange);

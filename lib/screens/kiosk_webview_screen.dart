@@ -894,8 +894,10 @@ class _KioskWebViewScreenState extends State<KioskWebViewScreen> with WidgetsBin
               final statusCode = error.response?.statusCode ?? 0;
               final url = error.response?.uri?.toString() ?? 'Unknown URL';
               
-              // Navigate to dedicated HTTP error page
-              Navigator.of(context).pushReplacement(
+              // Use push (not pushReplacement) so KioskWebViewScreen stays alive.
+              // pushReplacement would dispose the screen, triggering leaveSapEwm and
+              // stopping all activity tracking for the duration the user spends on the error page.
+              Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => HttpErrorPage(
                     statusCode: statusCode,
@@ -2400,23 +2402,7 @@ Widget _buildSavedNetworkItem(dynamic network) {
                       title: l10n.reloadApp,
                       onTap: () {
                         Navigator.pop(context); // Close drawer
-                        // Navigate back to shortcuts and immediately back to webview for complete reset
-                        Navigator.of(context).pop(); // Go back to shortcut list
-                        // Immediately navigate back to webview with same parameters for complete reset
-                        Future.microtask(() {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => KioskWebViewScreen(
-                                initialUrl: widget.initialUrl,
-                                disableAutoFocus: widget.disableAutoFocus,
-                                useCustomKeyboard: _useCustomKeyboardRuntime,
-                                disableCopyPaste: _disableCopyPasteRuntime,
-                                shortcutIconUrl: widget.shortcutIconUrl,
-                                shortcutName: widget.shortcutName,
-                              ),
-                            ),
-                          );
-                        });
+                        _retryLoading(); // pushReplacement with all correct params (incl. isSapEwm)
                       },
                     ),
                     _buildMenuTile(
@@ -2594,6 +2580,8 @@ Widget _buildSavedNetworkItem(dynamic network) {
             disableAutoFocus: widget.disableAutoFocus,
             useCustomKeyboard: widget.useCustomKeyboard,
             disableCopyPaste: widget.disableCopyPaste,
+            enableWarningSound: widget.enableWarningSound,
+            isSapEwm: widget.isSapEwm,
             shortcutIconUrl: widget.shortcutIconUrl,
             shortcutName: widget.shortcutName,
           ),
